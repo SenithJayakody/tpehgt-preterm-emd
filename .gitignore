@@ -1,0 +1,65 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+bioenv/
+*.egg-info/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# CatBoost and model artifacts
+catboost_info/
+*.cbm
+*.pkl
+*.joblib
+*.model
+
+# PhysioNet dataset files
+data/tpehgt/*
+data/raw/
+*.dat
+*.hea
+*.atr
+*.qrs
+
+# Generated analysis outputs
+outputs/*
+!outputs/.gitkeep
+!data/
+!data/tpehgt/
+!data/tpehgt/.gitkeep
+
+# Logs
+*.log
+logs/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+*.swp
+*.swo
+
+# Archives
+*.zip
+*.tar
+*.tar.gz
+*.rar
+*.7z

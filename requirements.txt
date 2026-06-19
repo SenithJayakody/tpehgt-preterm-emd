@@ -1,0 +1,9 @@
+numpy
+pandas
+scipy
+scikit-learn
+wfdb
+EMD-signal
+catboost
+tqdm
+matplotlib
