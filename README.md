@@ -11,9 +11,6 @@ The pipeline uses the Term-Preterm EHG DataSet with Tocogram (TPEHGT) and evalua
 - `features.py` - EMD decomposition and feature extraction.
 - `extract_features.py` - generates feature tables for contraction and fixed 3-minute analyses.
 - `classify_groupwise_cv.py` - repeated record-wise grouped cross-validation and metric summaries.
-- `make_plots.py` - main result plots.
-- `make_signal_plots.py` - signal-level diagnostic plots.
-- `plot_*.py` - manuscript-specific figures.
 - `requirements.txt` - Python dependencies.
 
 ## Data
@@ -65,24 +62,7 @@ Run the scripts from the repository root in this order:
 python io_readers.py
 python extract_features.py
 python classify_groupwise_cv.py
-python make_plots.py
-python plot_best_model_comparison.py
-python plot_confusion_matrices.py
-python plot_roc_pr_paper.py
-python plot_feature_effect_forest.py
-python plot_grouped_permutation_importance.py
-python plot_feature_type_distributions.py
-python plot_mean_imf1_psd.py
 ```
-
-Optional, signal-level diagnostic plots:
-
-```powershell
-python make_signal_plots.py
-python plot_imf_psd_acf.py
-```
-
-These optional scripts can generate many files. For a quick test, reduce `MAX_SIGNAL_SEGMENTS_PER_RECORD_MODE` in `config.py`.
 
 Generated files are written to:
 
@@ -107,4 +87,3 @@ The manuscript pipeline uses:
 ## Citation
 
 If you use this code, please cite the associated manuscript and the original TPEHGT dataset.
-

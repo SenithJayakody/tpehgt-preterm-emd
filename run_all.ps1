@@ -1,11 +1,3 @@
 python io_readers.py
 python extract_features.py
 python classify_groupwise_cv.py
-python make_plots.py
-python plot_best_model_comparison.py
-python plot_confusion_matrices.py
-python plot_roc_pr_paper.py
-python plot_feature_effect_forest.py
-python plot_grouped_permutation_importance.py
-python plot_feature_type_distributions.py
-python plot_mean_imf1_psd.py
