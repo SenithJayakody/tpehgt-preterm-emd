@@ -32,7 +32,7 @@ FEATURE_NAMES = [
     "IPI_MEAN",
     "IPI_CV",
     "PW_MEAN",  # mean peak width at configured relative prominence
-    "BURST_COUNT",
+    "BURST_RATE",
     "PEAKS_PER_BURST_MEAN",
     "DASDV",
     "LOG",
@@ -268,39 +268,61 @@ def detect_peaks(
 
 
 def peak_burst_features(x: np.ndarray, cfg: FeatureConfig) -> Dict[str, float]:
+    """
+    Extract peak- and burst-related features.
+
+    Undefined quantities are stored as NaN rather than zero. For example,
+    inter-peak-interval features are undefined when fewer than two peaks are
+    detected. Event-rate features remain genuine zeros when no events are
+    detected.
+
+    BURST_RATE is used instead of raw burst count so that variable-duration
+    contraction segments are not automatically assigned larger values simply
+    because they provide more observation time.
+    """
     x = np.asarray(x, dtype=float).ravel()
 
+    duration_sec = x.size / (cfg.fs + 1e-12)
+
     out = {
+        # Genuine event rates: zero is meaningful when no events are detected.
         "PEAK_RATE": 0.0,
-        "PEAK_AMP_MEAN": 0.0,
-        "PEAK_AMP_CV": 0.0,
-        "IPI_MEAN": 0.0,
-        "IPI_CV": 0.0,
-        "PW_MEAN": 0.0,
-        "BURST_COUNT": 0.0,
-        "PEAKS_PER_BURST_MEAN": 0.0,
+        "BURST_RATE": 0.0,
+
+        # Peak-dependent descriptors: undefined until enough peaks exist.
+        "PEAK_AMP_MEAN": np.nan,
+        "PEAK_AMP_CV": np.nan,
+        "IPI_MEAN": np.nan,
+        "IPI_CV": np.nan,
+        "PW_MEAN": np.nan,
+        "PEAKS_PER_BURST_MEAN": np.nan,
     }
 
     peaks, amplitudes, peak_signal = detect_peaks(x, cfg)
 
-    duration_sec = x.size / (cfg.fs + 1e-12)
     out["PEAK_RATE"] = float(peaks.size / (duration_sec + 1e-12))
 
+    # No detected peaks:
+    # - peak rate = 0 and burst rate = 0 are genuine observations;
+    # - amplitude, width, IPI and peaks-per-burst descriptors are undefined.
     if peaks.size == 0:
         return out
 
-    amp_mean = float(np.mean(amplitudes)) if amplitudes.size else 0.0
-    amp_std = float(np.std(amplitudes)) if amplitudes.size else 0.0
+    # Mean peak amplitude is defined when at least one peak exists.
+    if amplitudes.size:
+        amp_mean = float(np.mean(amplitudes))
+        out["PEAK_AMP_MEAN"] = amp_mean
 
-    out["PEAK_AMP_MEAN"] = amp_mean
-    out["PEAK_AMP_CV"] = safe_cv(amp_mean, amp_std)
+        # A variability estimate requires at least two observed amplitudes.
+        if amplitudes.size >= 2:
+            amp_std = float(np.std(amplitudes, ddof=0))
+            out["PEAK_AMP_CV"] = safe_cv(amp_mean, amp_std)
 
+    # Peak width is defined when at least one detected peak is available.
     try:
-        # scipy.signal.peak_widths evaluates width relative to peak prominence:
-        # h_eval = h_peak - prominence * rel_height.
-        # Therefore, with rel_height=0.5 (the present configuration), this is
-        # the width at half prominence, not necessarily full width at half
-        # maximum (FWHM).
+        # scipy.signal.peak_widths evaluates width relative to prominence.
+        # With WIDTH_REL_HEIGHT = 0.5 this is width at half prominence,
+        # not necessarily full width at half maximum (FWHM).
         widths_at_relative_prominence_samples = peak_widths(
             peak_signal,
             peaks,
@@ -311,41 +333,60 @@ def peak_burst_features(x: np.ndarray, cfg: FeatureConfig) -> Dict[str, float]:
             widths_at_relative_prominence_samples / (cfg.fs + 1e-12)
         )
 
-        out["PW_MEAN"] = (
-            float(np.mean(widths_at_relative_prominence_sec))
-            if widths_at_relative_prominence_sec.size
-            else 0.0
-        )
+        if widths_at_relative_prominence_sec.size:
+            out["PW_MEAN"] = float(
+                np.mean(widths_at_relative_prominence_sec)
+            )
     except Exception:
-        out["PW_MEAN"] = 0.0
+        # Width is unavailable for this peak set; preserve it as missing.
+        out["PW_MEAN"] = np.nan
 
+    # At least one detected peak forms one detected burst under the grouping rule.
     if peaks.size < 2:
-        out["BURST_COUNT"] = 1.0
-        out["PEAKS_PER_BURST_MEAN"] = float(peaks.size)
+        burst_count = 1
+        out["BURST_RATE"] = float(
+            burst_count / (duration_sec + 1e-12)
+        )
+        out["PEAKS_PER_BURST_MEAN"] = 1.0
+
+        # IPI mean and IPI CV remain NaN because no interval exists.
         return out
 
+    # Inter-peak intervals are available from two or more peaks.
     ipi = np.diff(peaks) / (cfg.fs + 1e-12)
 
-    ipi_mean = float(np.mean(ipi))
-    ipi_std = float(np.std(ipi))
+    if ipi.size:
+        ipi_mean = float(np.mean(ipi))
+        out["IPI_MEAN"] = ipi_mean
 
-    out["IPI_MEAN"] = ipi_mean
-    out["IPI_CV"] = safe_cv(ipi_mean, ipi_std)
+        # IPI variability requires at least two intervals (>= 3 peaks).
+        if ipi.size >= 2:
+            ipi_std = float(np.std(ipi, ddof=0))
+            out["IPI_CV"] = safe_cv(ipi_mean, ipi_std)
 
+    # Group temporally adjacent peaks into bursts.
     burst_breaks = np.where(ipi > cfg.burst_tau_sec)[0]
 
     burst_starts = np.r_[0, burst_breaks + 1]
     burst_ends = np.r_[burst_breaks, peaks.size - 1]
 
-    out["BURST_COUNT"] = float(len(burst_starts))
+    burst_count = int(len(burst_starts))
+
+    # Normalize by segment duration to remove the direct opportunity/length
+    # effect present in variable-duration contraction segments.
+    out["BURST_RATE"] = float(
+        burst_count / (duration_sec + 1e-12)
+    )
 
     peaks_per_burst = [
-        int(end - start + 1) for start, end in zip(burst_starts, burst_ends)
+        int(end - start + 1)
+        for start, end in zip(burst_starts, burst_ends)
     ]
 
-    out["PEAKS_PER_BURST_MEAN"] = (
-        float(np.mean(peaks_per_burst)) if peaks_per_burst else 0.0
-    )
+    if peaks_per_burst:
+        out["PEAKS_PER_BURST_MEAN"] = float(
+            np.mean(peaks_per_burst)
+        )
 
     return out
 
@@ -504,7 +545,7 @@ def extract_features_from_signal(
     x = np.asarray(signal, dtype=float).ravel()
 
     if x.size < 5:
-        return empty_features()
+        return missing_features()
 
     # A requested IMF that was not produced by EMD is represented as an
     # all-NaN signal by get_imf(). Preserve that state as missing features
