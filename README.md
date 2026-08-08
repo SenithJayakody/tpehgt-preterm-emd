@@ -45,7 +45,7 @@ These results are based on 26 recordings and require validation on larger indepe
 .
 ├── data/tpehgt/1.0.0/       # TPEHGT v1.0.0 (third-party data)
 ├── outputs/features/        # extracted feature tables
-├── outputs/results/         # fold-, segment-, and record-level results
+├── outputs/results/         # fold-, repeat-, and record-level results
 ├── outputs/plots/paper/     # publication figures and supporting tables
 ├── config.py                # experiment settings and paths
 ├── io_readers.py            # WFDB loading and metadata parsing

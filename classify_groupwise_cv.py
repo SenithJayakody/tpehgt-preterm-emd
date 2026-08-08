@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
+from importlib import metadata
 import os
 import re
 import shutil
@@ -62,6 +64,52 @@ from config import (
 
 OUTPUT_DECIMALS = 4
 CHECKPOINT_VERSION = 1
+
+MODEL_ORDER = [
+    "QDA",
+    "Logistic Regression",
+    "SVM",
+    "Decision Tree",
+    "Random Forest",
+    "Gradient Boosting",
+    "Naive Bayes",
+    "MLP",
+    "CatBoost",
+]
+
+MODEL_DISPLAY_NAMES = {
+    "QDA": "QDA",
+    "Logistic Regression": "LR",
+    "SVM": "SVM",
+    "Decision Tree": "DT",
+    "Random Forest": "RF",
+    "Gradient Boosting": "GB",
+    "Naive Bayes": "NB",
+    "MLP": "MLP",
+    "CatBoost": "CB",
+}
+
+MODEL_SORT_RANK = {
+    name: rank
+    for rank, internal_name in enumerate(MODEL_ORDER)
+    for name in (internal_name, MODEL_DISPLAY_NAMES[internal_name])
+}
+
+RUNTIME_ONLY_CONFIG_NAMES = {
+    "N_JOBS",
+    "DEBUG_N_REPEATS",
+    "DEBUG_EXPERIMENTS",
+    "DEBUG_MODELS",
+    "CLASSIFICATION_RESUME",
+}
+
+RELEVANT_PACKAGES = (
+    "numpy",
+    "scipy",
+    "scikit-learn",
+    "pandas",
+    "catboost",
+)
 
 METADATA_COLUMNS = {
     "mode",
@@ -436,6 +484,28 @@ def round_numeric_for_output(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def prepare_model_output(
+    df: pd.DataFrame,
+    secondary_sort_columns: List[str],
+) -> pd.DataFrame:
+    """Return an ordered output copy with publication model labels."""
+    out = df.copy()
+    model_ranks = out["model"].map(MODEL_SORT_RANK)
+    if model_ranks.isna().any():
+        unknown = sorted(out.loc[model_ranks.isna(), "model"].astype(str).unique())
+        raise ValueError(f"Unknown model name(s) in result table: {unknown}")
+
+    out["_model_order"] = model_ranks.astype(int)
+    out = out.sort_values(
+        ["_model_order", *secondary_sort_columns],
+        kind="stable",
+    ).drop(columns="_model_order")
+    out["model"] = out["model"].map(
+        lambda name: MODEL_DISPLAY_NAMES.get(name, name)
+    )
+    return out.reset_index(drop=True)
+
+
 def build_repeat_level_metrics(
     record_predictions: pd.DataFrame,
     expected_records: set[str],
@@ -669,11 +739,75 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def sha256_scientific_config(path: Path) -> str:
+    """Hash config source while excluding explicitly runtime-only assignments."""
+    source = path.read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    lines = source.splitlines(keepends=True)
+    replacements: List[Tuple[int, int, str]] = []
+
+    for node in tree.body:
+        target_name = None
+        if isinstance(node, ast.Assign) and len(node.targets) == 1:
+            target = node.targets[0]
+            if isinstance(target, ast.Name):
+                target_name = target.id
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            target_name = node.target.id
+
+        if target_name in RUNTIME_ONLY_CONFIG_NAMES:
+            replacements.append(
+                (node.lineno - 1, node.end_lineno or node.lineno, target_name)
+            )
+
+    for start, end, target_name in reversed(replacements):
+        lines[start:end] = [f"{target_name} = <runtime-only>\n"]
+
+    normalized_source = "".join(lines).encode("utf-8")
+    return hashlib.sha256(normalized_source).hexdigest()
+
+
+def get_relevant_package_versions() -> Tuple[Tuple[str, str], ...]:
+    versions = []
+    for package_name in RELEVANT_PACKAGES:
+        try:
+            package_version = metadata.version(package_name)
+        except metadata.PackageNotFoundError:
+            if package_name == "catboost":
+                continue
+            package_version = "not-installed"
+        versions.append((package_name, package_version))
+    return tuple(versions)
+
+
+def get_implementation_state(
+    classification_path: Path | None = None,
+    config_path: Path | None = None,
+) -> Tuple[str, str, Tuple[Tuple[str, str], ...]]:
+    """Return source/config/environment state that can affect predictions."""
+    classification_path = (
+        Path(__file__).resolve()
+        if classification_path is None
+        else Path(classification_path)
+    )
+    config_path = (
+        Path(__file__).resolve().with_name("config.py")
+        if config_path is None
+        else Path(config_path)
+    )
+    return (
+        sha256_file(classification_path),
+        sha256_scientific_config(config_path),
+        get_relevant_package_versions(),
+    )
+
+
 def make_task_fingerprint(
     csv_digest: str,
     feature_cols: List[str],
     model_name: str,
     model: object,
+    implementation_state: Tuple[str, str, Tuple[Tuple[str, str], ...]],
 ) -> str:
     state = repr(
         (
@@ -686,6 +820,7 @@ def make_task_fingerprint(
             RANDOM_SEED,
             RECORD_AGGREGATION,
             THRESHOLD_METRIC,
+            implementation_state,
         )
     )
     return hashlib.sha256(state.encode("utf-8")).hexdigest()
@@ -787,13 +922,18 @@ def run_one_feature_file(
     out_dir = RESULT_DIR / name
     out_dir.mkdir(parents=True, exist_ok=True)
     csv_digest = sha256_file(csv_path)
+    implementation_state = get_implementation_state()
 
     completed: Dict[Tuple[str, int], Dict] = {}
     pending: List[Tuple[str, object, int, str]] = []
     for repeat in range(n_repeats):
         for model_name, model in models.items():
             fingerprint = make_task_fingerprint(
-                csv_digest, feature_cols, model_name, model
+                csv_digest,
+                feature_cols,
+                model_name,
+                model,
+                implementation_state,
             )
             path = checkpoint_path(out_dir, model_name, repeat)
             result = (
@@ -911,22 +1051,36 @@ def run_one_feature_file(
     summary.columns = [f"{first}_{second}" for first, second in summary.columns]
     summary = round_numeric_for_output(summary.reset_index())
 
-    round_numeric_for_output(fold_results).to_csv(
+    fold_results_out = round_numeric_for_output(
+        prepare_model_output(fold_results, ["repeat", "fold"])
+    )
+    record_predictions_out = round_numeric_for_output(
+        prepare_model_output(
+            record_predictions,
+            ["repeat", "fold", "record"],
+        )
+    )
+    repeat_metrics_out = round_numeric_for_output(
+        prepare_model_output(repeat_metrics, ["repeat"])
+    )
+    summary_out = prepare_model_output(summary, [])
+
+    fold_results_out.to_csv(
         out_dir / "fold_metrics.csv",
         index=False,
         float_format=f"%.{OUTPUT_DECIMALS}f",
     )
-    round_numeric_for_output(record_predictions).to_csv(
+    record_predictions_out.to_csv(
         out_dir / "record_predictions.csv",
         index=False,
         float_format=f"%.{OUTPUT_DECIMALS}f",
     )
-    round_numeric_for_output(repeat_metrics).to_csv(
+    repeat_metrics_out.to_csv(
         out_dir / "repeat_metrics.csv",
         index=False,
         float_format=f"%.{OUTPUT_DECIMALS}f",
     )
-    summary.to_csv(
+    summary_out.to_csv(
         out_dir / "summary_metrics.csv",
         index=False,
         float_format=f"%.{OUTPUT_DECIMALS}f",
@@ -948,7 +1102,7 @@ def run_one_feature_file(
     ]
     print(f"\nRecord-level summary ({n_repeats} complete OOF repetitions):")
     print(
-        summary[display_cols].to_string(
+        summary_out[display_cols].to_string(
             index=False,
             float_format=lambda value: f"{value:.{OUTPUT_DECIMALS}f}",
         )
@@ -966,16 +1120,24 @@ def materialize_result_alias(alias_name: str, source_name: str) -> None:
         )
     alias_dir.mkdir(parents=True, exist_ok=True)
 
-    for filename in ["fold_metrics.csv", "record_predictions.csv", "repeat_metrics.csv"]:
+    alias_sort_columns = {
+        "fold_metrics.csv": ["repeat", "fold"],
+        "record_predictions.csv": ["repeat", "fold", "record"],
+        "repeat_metrics.csv": ["repeat"],
+        "summary_metrics.csv": [],
+    }
+    for filename, secondary_sort_columns in alias_sort_columns.items():
         frame = pd.read_csv(source_dir / filename)
-        frame["experiment"] = alias_name
+        if "experiment" in frame.columns:
+            frame["experiment"] = alias_name
+        frame = prepare_model_output(frame, secondary_sort_columns)
         frame.to_csv(
             alias_dir / filename,
             index=False,
             float_format=f"%.{OUTPUT_DECIMALS}f",
         )
 
-    for filename in ["summary_metrics.csv", "splits.csv", "feature_columns.txt"]:
+    for filename in ["splits.csv", "feature_columns.txt"]:
         shutil.copyfile(source_dir / filename, alias_dir / filename)
     print(f"Reused {source_name} results as {alias_name} (no reclassification).")
 
