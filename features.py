@@ -31,7 +31,7 @@ FEATURE_NAMES = [
     "PEAK_AMP_CV",
     "IPI_MEAN",
     "IPI_CV",
-    "PW_MEAN",
+    "PW_MEAN",  # mean peak width at configured relative prominence
     "BURST_COUNT",
     "PEAKS_PER_BURST_MEAN",
     "DASDV",
@@ -52,6 +52,9 @@ class FeatureConfig:
     peak_mode: str = PEAK_MODE
     thresh_k: float = THK
     min_distance_sec: float = MD_SEC
+    # Passed to scipy.signal.peak_widths. A value of 0.5 means
+    # width evaluated at half of the peak prominence, not necessarily
+    # full width at half maximum (FWHM).
     width_rel_height: float = WIDTH_REL_HEIGHT
     burst_tau_sec: float = 2.0
 
@@ -293,13 +296,26 @@ def peak_burst_features(x: np.ndarray, cfg: FeatureConfig) -> Dict[str, float]:
     out["PEAK_AMP_CV"] = safe_cv(amp_mean, amp_std)
 
     try:
-        widths_samples = peak_widths(
+        # scipy.signal.peak_widths evaluates width relative to peak prominence:
+        # h_eval = h_peak - prominence * rel_height.
+        # Therefore, with rel_height=0.5 (the present configuration), this is
+        # the width at half prominence, not necessarily full width at half
+        # maximum (FWHM).
+        widths_at_relative_prominence_samples = peak_widths(
             peak_signal,
             peaks,
             rel_height=cfg.width_rel_height,
         )[0]
-        widths_sec = widths_samples / (cfg.fs + 1e-12)
-        out["PW_MEAN"] = float(np.mean(widths_sec)) if widths_sec.size else 0.0
+
+        widths_at_relative_prominence_sec = (
+            widths_at_relative_prominence_samples / (cfg.fs + 1e-12)
+        )
+
+        out["PW_MEAN"] = (
+            float(np.mean(widths_at_relative_prominence_sec))
+            if widths_at_relative_prominence_sec.size
+            else 0.0
+        )
     except Exception:
         out["PW_MEAN"] = 0.0
 
