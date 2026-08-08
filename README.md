@@ -58,7 +58,8 @@ These results are based on 26 recordings and require validation on larger indepe
 
 ## Installation
 
-Python 3.10 or newer is required.
+The reported experiments were executed using **Python 3.10.20**. 
+The exact versions of the main software dependencies used for the reported results are pinned in `requirements.txt`.
 
 ```bash
 git clone https://github.com/SenithJayakody/tpehgt-preterm-emd.git
