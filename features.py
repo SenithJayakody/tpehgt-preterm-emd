@@ -70,6 +70,11 @@ def empty_features() -> Dict[str, float]:
     return {name: 0.0 for name in FEATURE_NAMES}
 
 
+def missing_features() -> Dict[str, float]:
+    """Return NaN for every feature when the requested signal representation is unavailable."""
+    return {name: np.nan for name in FEATURE_NAMES}
+
+
 def imf_number_to_index(imf_number: int) -> int:
     if imf_number < 1:
         raise ValueError("Use manuscript-style IMF numbers: IMF1, IMF2, ...")
@@ -77,45 +82,93 @@ def imf_number_to_index(imf_number: int) -> int:
 
 
 def compute_imfs(
-    x: np.ndarray, max_imfs: int = MAX_IMFS
+    x: np.ndarray,
+    max_imfs: int = MAX_IMFS,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Compute EMD and return (imfs, residual).
 
-    imfs has shape (max_imfs, n). If fewer IMFs are returned by EMD, the
-    remaining rows are zero-padded. The residual is x - sum(available imfs).
+    The returned IMF array contains only genuine IMFs produced by PyEMD;
+    it is not zero-padded when fewer than ``max_imfs`` IMFs are available.
+    The residual is obtained separately through ``get_imfs_and_residue()``.
+
+    EMD failures are raised explicitly rather than being converted into
+    artificial zero-valued IMFs.
     """
     x = np.asarray(x, dtype=float).ravel()
 
     if x.size < 5:
-        return np.zeros((max_imfs, x.size), dtype=float), np.zeros_like(x)
+        raise ValueError(
+            f"Signal is too short for EMD: {x.size} samples."
+        )
+
+    if not np.all(np.isfinite(x)):
+        raise ValueError(
+            "Input signal contains NaN or infinite values."
+        )
+
+    emd = EMD()
 
     try:
-        emd = EMD()
-        imfs_raw = emd.emd(x)
-    except Exception:
-        return np.zeros((max_imfs, x.size), dtype=float), x.copy()
+        # Run EMD while requesting no more than the number of modes needed
+        # by this analysis.
+        emd.emd(x, max_imf=max_imfs)
+
+        # PyEMD's emd() return value can contain a residual as its last row.
+        # Use the dedicated accessor to separate genuine IMFs and residual.
+        imfs_raw, residual = emd.get_imfs_and_residue()
+
+    except Exception as exc:
+        raise RuntimeError("EMD decomposition failed.") from exc
+
+    imfs_raw = np.asarray(imfs_raw, dtype=float)
+    residual = np.asarray(residual, dtype=float).ravel()
 
     if imfs_raw.ndim == 1:
         imfs_raw = imfs_raw[None, :]
 
-    imfs = np.zeros((max_imfs, x.size), dtype=float)
-    n = min(max_imfs, imfs_raw.shape[0])
-    imfs[:n, :] = imfs_raw[:n, :]
+    if imfs_raw.ndim != 2:
+        raise RuntimeError(
+            f"Unexpected IMF array shape returned by PyEMD: {imfs_raw.shape}"
+        )
 
-    residual = x - np.sum(imfs[:n, :], axis=0)
+    if imfs_raw.shape[1] != x.size:
+        raise RuntimeError(
+            "EMD returned IMF length inconsistent with the input signal."
+        )
+
+    if residual.size != x.size:
+        raise RuntimeError(
+            "EMD returned residual length inconsistent with the input signal."
+        )
+
+    # Defensive slice only. No artificial zero-padding is performed.
+    imfs = imfs_raw[:max_imfs].copy()
 
     return imfs, residual
 
 
-def get_imf(x: np.ndarray, imf_number: int = 1, max_imfs: int = MAX_IMFS) -> np.ndarray:
+def get_imf(
+    x: np.ndarray,
+    imf_number: int = 1,
+    max_imfs: int = MAX_IMFS,
+) -> np.ndarray:
+    """
+    Return the requested genuine IMF.
+
+    If EMD succeeds but does not produce the requested IMF, return a NaN
+    signal so that downstream feature values are represented as missing
+    rather than as a physiological zero signal.
+    """
+    x = np.asarray(x, dtype=float).ravel()
+
     imfs, _ = compute_imfs(x, max_imfs=max_imfs)
     idx = imf_number_to_index(imf_number)
 
     if idx >= imfs.shape[0]:
-        return np.zeros_like(np.asarray(x, dtype=float).ravel())
+        return np.full(x.shape, np.nan, dtype=float)
 
-    return imfs[idx]
+    return imfs[idx].copy()
 
 
 def safe_cv(mean_value: float, std_value: float) -> float:
@@ -382,6 +435,13 @@ def extract_features_from_signal(
 
     if x.size < 5:
         return empty_features()
+
+    # A requested IMF that was not produced by EMD is represented as an
+    # all-NaN signal by get_imf(). Preserve that state as missing features
+    # so the classifier's training-fold imputer can handle it without
+    # confusing IMF absence with a true zero-valued physiological signal.
+    if not np.all(np.isfinite(x)):
+        return missing_features()
 
     feats = peak_burst_features(x, cfg)
     feats["DASDV"] = dasdv(x)
