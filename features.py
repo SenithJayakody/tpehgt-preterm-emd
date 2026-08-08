@@ -402,9 +402,44 @@ def sample_entropy(
     r: float = SAMPEN_R,
     tau: int = SAMPEN_TAU,
 ) -> float:
+    """
+    Compute Sample Entropy (SampEn) using the standard conditional-match
+    definition:
+
+        SampEn(m, r, N) = -ln(A / B)
+
+    where:
+    - B is the number of distinct template pairs that match for m points;
+    - A is the number of those extendable template pairs that also match
+      for m + 1 points;
+    - self-matches are excluded;
+    - matching uses Chebyshev distance (maximum absolute pointwise
+      difference) with tolerance r * population standard deviation.
+
+    The m- and (m+1)-dimensional templates are built from the same set of
+    starting indices so that every m-template included in B can be extended
+    by one additional delayed sample. This avoids the boundary/template-count
+    mismatch that occurs when match probabilities are estimated separately
+    from N-(m-1)tau and N-m*tau templates.
+
+    If B == 0, SampEn is undefined. If A == 0 while B > 0, the mathematical
+    value is +infinity. In this pipeline both cases are stored as NaN so that
+    they are treated as missing values downstream rather than as finite
+    physiological measurements.
+    """
     x = np.asarray(x, dtype=float).ravel()
 
-    if x.size < (m + 2) * tau:
+    if m < 1 or tau < 1:
+        raise ValueError("m and tau must be positive integers")
+
+    if not np.all(np.isfinite(x)):
+        return np.nan
+
+    # To compare m-point matches with their (m+1)-point extensions, every
+    # template start must permit the sample at i + m*tau to exist.
+    n_templates = x.size - m * tau
+
+    if n_templates < 2:
         return np.nan
 
     tolerance = r * np.std(x, ddof=0)
@@ -412,30 +447,49 @@ def sample_entropy(
     if tolerance <= 0 or not np.isfinite(tolerance):
         return np.nan
 
-    xm = embed_signal(x, m, tau)
-    xm1 = embed_signal(x, m + 1, tau)
+    starts = np.arange(n_templates, dtype=int)
 
-    def match_probability(vectors: np.ndarray) -> float:
+    # Both template families use exactly the same starting positions.
+    templates_m = np.column_stack(
+        [x[starts + j * tau] for j in range(m)]
+    )
+    templates_m1 = np.column_stack(
+        [x[starts + j * tau] for j in range(m + 1)]
+    )
+
+    def count_matching_pairs(vectors: np.ndarray) -> float:
+        """
+        Count distinct unordered template pairs whose Chebyshev distance is
+        less than or equal to the tolerance. Self-matches are excluded.
+        """
         n = vectors.shape[0]
 
         if n < 2:
-            return np.nan
+            return 0.0
 
         tree = cKDTree(vectors)
-        counts = np.array(
-            [len(tree.query_ball_point(v, tolerance, p=np.inf)) - 1 for v in vectors],
-            dtype=float,
+
+        # query_ball_point includes the vector itself. Subtract one to remove
+        # the self-match. Summing over all templates counts each unordered
+        # pair twice, so divide by two.
+        counts = np.fromiter(
+            (
+                len(tree.query_ball_point(v, tolerance, p=np.inf)) - 1
+                for v in vectors
+            ),
+            dtype=np.int64,
+            count=n,
         )
 
-        return float(counts.sum() / (n * (n - 1)))
+        return float(counts.sum() / 2.0)
 
-    b = match_probability(xm)
-    a = match_probability(xm1)
+    b_matches = count_matching_pairs(templates_m)
+    a_matches = count_matching_pairs(templates_m1)
 
-    if not np.isfinite(a) or not np.isfinite(b) or a <= 0 or b <= 0:
+    if b_matches <= 0 or a_matches <= 0:
         return np.nan
 
-    return float(-np.log(a / b))
+    return float(-np.log(a_matches / b_matches))
 
 
 def extract_features_from_signal(
