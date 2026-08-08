@@ -88,6 +88,23 @@ RANDOM_SEED = 42
 RECORD_AGGREGATION = "max"
 THRESHOLD_METRIC = "mcc"
 
+# Runtime controls. ``-1`` uses all available CPUs. Estimators that expose
+# their own threading controls are kept at one internal worker so this outer
+# job-level parallelism does not oversubscribe the machine.
+N_JOBS = -1
+
+# Optional development overrides. Keep these as ``None`` for the complete
+# manuscript analysis (all experiments, all models, 30 repetitions). They can
+# also be overridden from the classification command line.
+DEBUG_N_REPEATS = None
+DEBUG_EXPERIMENTS = None
+DEBUG_MODELS = None
+
+# Completed model/repeat jobs are stored atomically and reused after an
+# interrupted classification run. Set to False to disable resume by default;
+# the command line also provides --no-resume.
+CLASSIFICATION_RESUME = True
+
 # ---------------------------------------------------------------------
 # Plot settings
 # ---------------------------------------------------------------------

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 from typing import Dict, List, Tuple
 
 import pandas as pd
+from joblib import Parallel, delayed, parallel_config
 from tqdm import tqdm
 
 from config import (
@@ -13,9 +15,12 @@ from config import (
     BT_FIXED_SEC,
     FINAL_IMF_NUMBER,
     IMF_SELECTION_NUMBERS,
+    MAX_IMFS,
+    N_JOBS,
 )
 from features import (
-    extract_imf_features_from_segment,
+    compute_imfs,
+    extract_imf_features_from_decomposition,
     extract_time_domain_features_from_segment,
 )
 from io_readers import (
@@ -26,28 +31,31 @@ from io_readers import (
 )
 
 
-def build_rows_for_mode(
-    records: List[Dict],
+def build_rows_for_record(
+    rec: Dict,
     mode: str,
-    intervals_by_record: Dict[str, List[Tuple[int, int]]],
+    intervals: List[Tuple[int, int]],
     burst_threshold_sec: float,
-    feature_source: str,
-    imf_number: int | None = None,
-) -> pd.DataFrame:
-    rows = []
+    imf_numbers: List[int],
+) -> Dict[str, List[Dict]]:
+    """Extract every requested representation for one recording.
 
-    for rec in tqdm(records, desc=f"Extracting {mode}, {feature_source}"):
-        record = rec["record"]
-        fs = rec["fs"]
-        intervals = intervals_by_record[record]
+    A segment/channel decomposition is shared by all requested IMF numbers.
+    The returned row lists retain segment and source order deterministically.
+    """
+    sources = ["time_domain", *(f"imf{number}" for number in imf_numbers)]
+    rows_by_source: Dict[str, List[Dict]] = {source: [] for source in sources}
+    record = rec["record"]
+    fs = rec["fs"]
 
-        for segment_id, (start, end) in enumerate(intervals):
-            if end <= start:
-                continue
+    for segment_id, (start, end) in enumerate(intervals):
+        if end <= start:
+            continue
 
-            row = {
+        source_rows = {
+            source: {
                 "mode": mode,
-                "feature_source": feature_source,
+                "feature_source": source,
                 "record": record,
                 "label": rec["label"],
                 "segment_id": segment_id,
@@ -55,39 +63,74 @@ def build_rows_for_mode(
                 "end_sample": int(end),
                 "start_sec": float(start / fs),
                 "end_sec": float(end / fs),
-                "imf": "none" if imf_number is None else f"IMF{imf_number}",
+                "imf": "none" if source == "time_domain" else source.upper(),
             }
+            for source in sources
+        }
 
-            for channel_name, signal in rec["ehg"].items():
-                segment = signal[start:end]
+        for channel_name, signal in rec["ehg"].items():
+            segment = signal[start:end]
 
-                if feature_source == "time_domain":
-                    feats = extract_time_domain_features_from_segment(
-                        segment,
-                        fs=fs,
-                        burst_threshold_sec=burst_threshold_sec,
-                    )
+            time_features = extract_time_domain_features_from_segment(
+                segment,
+                fs=fs,
+                burst_threshold_sec=burst_threshold_sec,
+            )
+            for feature_name, value in time_features.items():
+                source_rows["time_domain"][f"{channel_name}_{feature_name}"] = value
 
-                elif feature_source.startswith("imf"):
-                    if imf_number is None:
-                        raise ValueError("imf_number is required for IMF features")
+            # One corrected EMD call supplies IMF1--IMF4 for this exact
+            # segment/channel. No settings, residual logic, or missing-IMF
+            # behavior are changed.
+            imfs, _ = compute_imfs(segment, max_imfs=MAX_IMFS)
+            for imf_number in imf_numbers:
+                source = f"imf{imf_number}"
+                imf_features = extract_imf_features_from_decomposition(
+                    imfs=imfs,
+                    signal_length=len(segment),
+                    fs=fs,
+                    burst_threshold_sec=burst_threshold_sec,
+                    imf_number=imf_number,
+                )
+                for feature_name, value in imf_features.items():
+                    source_rows[source][f"{channel_name}_{feature_name}"] = value
 
-                    feats = extract_imf_features_from_segment(
-                        segment,
-                        fs=fs,
-                        burst_threshold_sec=burst_threshold_sec,
-                        imf_number=imf_number,
-                    )
+        for source in sources:
+            rows_by_source[source].append(source_rows[source])
 
-                else:
-                    raise ValueError(f"Unknown feature_source: {feature_source}")
+    return rows_by_source
 
-                for feature_name, value in feats.items():
-                    row[f"{channel_name}_{feature_name}"] = value
 
-            rows.append(row)
+def build_feature_tables_for_mode(
+    records: List[Dict],
+    mode: str,
+    intervals_by_record: Dict[str, List[Tuple[int, int]]],
+    burst_threshold_sec: float,
+    imf_numbers: List[int],
+    n_jobs: int,
+) -> Dict[str, pd.DataFrame]:
+    """Build ordered feature tables, parallelizing independent recordings."""
+    with parallel_config(backend="loky", inner_max_num_threads=1):
+        record_results = Parallel(n_jobs=n_jobs)(
+            delayed(build_rows_for_record)(
+                rec=rec,
+                mode=mode,
+                intervals=intervals_by_record[rec["record"]],
+                burst_threshold_sec=burst_threshold_sec,
+                imf_numbers=imf_numbers,
+            )
+            for rec in tqdm(records, desc=f"Extracting {mode}")
+        )
 
-    return pd.DataFrame(rows)
+    sources = ["time_domain", *(f"imf{number}" for number in imf_numbers)]
+    return {
+        source: pd.DataFrame(
+            row
+            for record_result in record_results
+            for row in record_result[source]
+        )
+        for source in sources
+    }
 
 
 def save_feature_csv(df: pd.DataFrame, path: Path) -> None:
@@ -97,7 +140,18 @@ def save_feature_csv(df: pd.DataFrame, path: Path) -> None:
     print(f"Saved: {path} | shape={df.shape}")
 
 
-def main() -> None:
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Extract TPEHGT feature tables.")
+    parser.add_argument(
+        "--n-jobs",
+        type=int,
+        default=N_JOBS,
+        help="Parallel recording workers (default: config.N_JOBS).",
+    )
+    return parser.parse_args()
+
+
+def main(n_jobs: int = N_JOBS) -> None:
     FEATURE_DIR.mkdir(parents=True, exist_ok=True)
 
     save_record_report(DATASET_DIR, out_csv="outputs/record_report.csv")
@@ -109,83 +163,48 @@ def main() -> None:
         rec["record"]: contraction_intervals(rec["record"], DATASET_DIR)
         for rec in records
     }
-
     fixed_by_record = {
         rec["record"]: fixed_intervals(rec["record"], DATASET_DIR)
         for rec in records
     }
 
-    # Main method: IMF1 features.
-    contraction_imf1_df = build_rows_for_mode(
-        records=records,
-        mode="contraction",
-        intervals_by_record=contraction_by_record,
-        burst_threshold_sec=BT_CONTRACTION_SEC,
-        feature_source="imf1",
-        imf_number=FINAL_IMF_NUMBER,
-    )
-    save_feature_csv(
-        contraction_imf1_df,
-        FEATURE_DIR / "tpehgt_contraction_imf1_features.csv",
-    )
+    # Include the manuscript IMF even if a future selection list omits it.
+    imf_numbers = list(dict.fromkeys([FINAL_IMF_NUMBER, *IMF_SELECTION_NUMBERS]))
+    tables_by_mode = {
+        "contraction": build_feature_tables_for_mode(
+            records=records,
+            mode="contraction",
+            intervals_by_record=contraction_by_record,
+            burst_threshold_sec=BT_CONTRACTION_SEC,
+            imf_numbers=imf_numbers,
+            n_jobs=n_jobs,
+        ),
+        "fixed_3min": build_feature_tables_for_mode(
+            records=records,
+            mode="fixed_3min",
+            intervals_by_record=fixed_by_record,
+            burst_threshold_sec=BT_FIXED_SEC,
+            imf_numbers=imf_numbers,
+            n_jobs=n_jobs,
+        ),
+    }
 
-    fixed_imf1_df = build_rows_for_mode(
-        records=records,
-        mode="fixed_3min",
-        intervals_by_record=fixed_by_record,
-        burst_threshold_sec=BT_FIXED_SEC,
-        feature_source="imf1",
-        imf_number=FINAL_IMF_NUMBER,
-    )
-    save_feature_csv(
-        fixed_imf1_df,
-        FEATURE_DIR / "tpehgt_fixed_3min_imf1_features.csv",
-    )
+    for mode, tables in tables_by_mode.items():
+        # Main IMF1 and time-domain experiments.
+        save_feature_csv(
+            tables[f"imf{FINAL_IMF_NUMBER}"],
+            FEATURE_DIR / f"tpehgt_{mode}_imf{FINAL_IMF_NUMBER}_features.csv",
+        )
+        save_feature_csv(
+            tables["time_domain"],
+            FEATURE_DIR / f"tpehgt_{mode}_time_domain_features.csv",
+        )
 
-    # Time-domain baseline: same filtered EHG segments, no EMD.
-    contraction_time_df = build_rows_for_mode(
-        records=records,
-        mode="contraction",
-        intervals_by_record=contraction_by_record,
-        burst_threshold_sec=BT_CONTRACTION_SEC,
-        feature_source="time_domain",
-        imf_number=None,
-    )
-    save_feature_csv(
-        contraction_time_df,
-        FEATURE_DIR / "tpehgt_contraction_time_domain_features.csv",
-    )
-
-    fixed_time_df = build_rows_for_mode(
-        records=records,
-        mode="fixed_3min",
-        intervals_by_record=fixed_by_record,
-        burst_threshold_sec=BT_FIXED_SEC,
-        feature_source="time_domain",
-        imf_number=None,
-    )
-    save_feature_csv(
-        fixed_time_df,
-        FEATURE_DIR / "tpehgt_fixed_3min_time_domain_features.csv",
-    )
-
-    # IMF selection: IMF1--IMF4 for both segmentation strategies.
-    for mode, intervals_by_record, bt in [
-        ("contraction", contraction_by_record, BT_CONTRACTION_SEC),
-        ("fixed_3min", fixed_by_record, BT_FIXED_SEC),
-    ]:
+        # IMF-selection IMF1 reuses the already-built main table. IMF2--IMF4
+        # likewise reuse the single decomposition computed above.
         for imf_number in IMF_SELECTION_NUMBERS:
-            imf_df = build_rows_for_mode(
-                records=records,
-                mode=mode,
-                intervals_by_record=intervals_by_record,
-                burst_threshold_sec=bt,
-                feature_source=f"imf{imf_number}",
-                imf_number=imf_number,
-            )
-
             save_feature_csv(
-                imf_df,
+                tables[f"imf{imf_number}"],
                 FEATURE_DIR
                 / "imf_selection"
                 / f"tpehgt_{mode}_imf{imf_number}_features.csv",
@@ -193,4 +212,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    main(n_jobs=args.n_jobs)

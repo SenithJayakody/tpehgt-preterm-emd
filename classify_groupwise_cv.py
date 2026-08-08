@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+import argparse
+import hashlib
+import os
+import re
+import shutil
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+import joblib
 import numpy as np
 import pandas as pd
+from joblib import Parallel, delayed, parallel_config
 
 from sklearn.base import clone
 from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
@@ -46,9 +53,15 @@ from config import (
     RANDOM_SEED,
     RECORD_AGGREGATION,
     THRESHOLD_METRIC,
+    N_JOBS,
+    DEBUG_N_REPEATS,
+    DEBUG_EXPERIMENTS,
+    DEBUG_MODELS,
+    CLASSIFICATION_RESUME,
 )
 
 OUTPUT_DECIMALS = 4
+CHECKPOINT_VERSION = 1
 
 METADATA_COLUMNS = {
     "mode",
@@ -77,9 +90,6 @@ FEATURE_FILES = {
     / "tpehgt_contraction_time_domain_features.csv",
     "fixed_3min_time_domain": FEATURE_DIR
     / "tpehgt_fixed_3min_time_domain_features.csv",
-    "contraction_imf1_selection": FEATURE_DIR
-    / "imf_selection"
-    / "tpehgt_contraction_imf1_features.csv",
     "contraction_imf2_selection": FEATURE_DIR
     / "imf_selection"
     / "tpehgt_contraction_imf2_features.csv",
@@ -89,9 +99,6 @@ FEATURE_FILES = {
     "contraction_imf4_selection": FEATURE_DIR
     / "imf_selection"
     / "tpehgt_contraction_imf4_features.csv",
-    "fixed_3min_imf1_selection": FEATURE_DIR
-    / "imf_selection"
-    / "tpehgt_fixed_3min_imf1_features.csv",
     "fixed_3min_imf2_selection": FEATURE_DIR
     / "imf_selection"
     / "tpehgt_fixed_3min_imf2_features.csv",
@@ -101,6 +108,14 @@ FEATURE_FILES = {
     "fixed_3min_imf4_selection": FEATURE_DIR
     / "imf_selection"
     / "tpehgt_fixed_3min_imf4_features.csv",
+}
+
+# IMF1-selection comparisons are numerically identical to the manuscript IMF1
+# experiments. Their result directories are retained for downstream plotting,
+# but the expensive classification is performed only once.
+RESULT_ALIASES = {
+    "contraction_imf1_selection": "contraction_imf1",
+    "fixed_3min_imf1_selection": "fixed_3min_imf1",
 }
 
 
@@ -130,7 +145,7 @@ def get_models() -> Dict[str, object]:
             min_samples_leaf=1,
             class_weight="balanced",
             random_state=RANDOM_SEED,
-            n_jobs=-1,
+            n_jobs=1,
         ),
         "Gradient Boosting": GradientBoostingClassifier(
             random_state=RANDOM_SEED,
@@ -158,6 +173,7 @@ def get_models() -> Dict[str, object]:
             depth=6,
             learning_rate=0.1,
             allow_writing_files=False,
+            thread_count=1,
         )
     else:
         print("CatBoost is not installed. CatBoost will be skipped.")
@@ -378,6 +394,15 @@ def choose_threshold_with_inner_group_cv(
     for inner_train_idx, inner_val_idx in inner_cv.split(
         x_train, y_train, groups_train
     ):
+        inner_train_records = set(groups_train[inner_train_idx])
+        inner_val_records = set(groups_train[inner_val_idx])
+        inner_overlap = inner_train_records.intersection(inner_val_records)
+        if inner_overlap:
+            raise RuntimeError(
+                "Record leakage found in inner threshold CV for "
+                f"repeat={repeat}, fold={fold}: {sorted(inner_overlap)}"
+            )
+
         inner_pipe = make_pipeline(clone(model))
         inner_pipe.fit(
             x_train.iloc[inner_train_idx],
@@ -475,70 +500,37 @@ def build_repeat_level_metrics(
     return pd.DataFrame(repeat_rows)
 
 
-def run_one_feature_file(name: str, csv_path: Path) -> None:
-    if not csv_path.exists():
-        print(f"\nSkipping {name}: missing {csv_path}")
-        return
-
-    print("\n==============================")
-    print(f"Running: {name}")
-    print(f"CSV    : {csv_path}")
-    print("==============================")
-
-    df = pd.read_csv(csv_path)
-    x, y, groups, record_col, feature_cols = get_feature_matrix(df)
-    expected_records = set(df[record_col].astype(str).unique())
-
-    print(
-        f"Rows: {len(df)} | Features: {x.shape[1]} | Records: {len(expected_records)}"
-    )
-    print(f"Record column: {record_col}")
-
-    print("Feature columns:")
-    for c in feature_cols:
-        print(f"  {c}")
-
-    print("\nRecord-wise grouping check:")
-    for record_id, g in df.groupby(record_col):
-        print(f"  {record_id}: {len(g)} segments")
-
-    models = get_models()
-
-    # Fold-level rows are retained only as diagnostics/audit information.
-    # The final summary is NOT computed from these fold metrics.
-    fold_rows: List[Dict] = []
-    record_pred_rows: List[pd.DataFrame] = []
+def build_outer_splits(
+    x: pd.DataFrame,
+    y: np.ndarray,
+    groups: np.ndarray,
+    n_repeats: int,
+) -> Tuple[Dict[int, List[Tuple[np.ndarray, np.ndarray]]], List[Dict]]:
+    """Create and audit the unchanged repeated grouped outer CV splits."""
+    expected_records = set(groups.astype(str))
+    splits_by_repeat: Dict[int, List[Tuple[np.ndarray, np.ndarray]]] = {}
     split_rows: List[Dict] = []
 
-    for repeat in range(N_REPEATS):
-        print(f"\nRepeat {repeat + 1}/{N_REPEATS}")
+    for repeat in range(n_repeats):
         cv = StratifiedGroupKFold(
             n_splits=N_SPLITS,
             shuffle=True,
             random_state=RANDOM_SEED + repeat,
         )
+        repeat_splits = list(cv.split(x, y, groups))
+        validation_records: List[str] = []
 
-        for fold, (train_idx, val_idx) in enumerate(cv.split(x, y, groups)):
-            print(
-                f"  Fold {fold + 1}/{N_SPLITS} | Train: {len(train_idx)} | Val: {len(val_idx)}"
-            )
-            x_train = x.iloc[train_idx]
-            x_val = x.iloc[val_idx]
-            y_train = y[train_idx]
-            groups_train = groups[train_idx]
-
-            meta_train = make_meta(df.iloc[train_idx], record_col)
-            meta_val = make_meta(df.iloc[val_idx], record_col)
-
-            train_records = set(meta_train["record"])
-            val_records = set(meta_val["record"])
+        for fold, (train_idx, val_idx) in enumerate(repeat_splits):
+            train_records = set(groups[train_idx].astype(str))
+            val_records = set(groups[val_idx].astype(str))
             overlap = train_records.intersection(val_records)
-
             if overlap:
                 raise RuntimeError(
-                    f"Record leakage found in repeat={repeat}, fold={fold}: {overlap}"
+                    f"Record leakage found in repeat={repeat}, fold={fold}: "
+                    f"{sorted(overlap)}"
                 )
 
+            validation_records.extend(val_records)
             split_rows.append(
                 {
                     "repeat": repeat,
@@ -550,99 +542,358 @@ def run_one_feature_file(name: str, csv_path: Path) -> None:
                 }
             )
 
-            for model_name, model in models.items():
-                try:
-                    # generated only within the current outer-training data.
-                    threshold = choose_threshold_with_inner_group_cv(
-                        model=model,
-                        x_train=x_train,
-                        y_train=y_train,
-                        groups_train=groups_train,
-                        meta_train=meta_train,
-                        repeat=repeat,
-                        fold=fold,
-                    )
+        if len(validation_records) != len(set(validation_records)):
+            raise RuntimeError(f"A record occurs in multiple folds for repeat={repeat}.")
+        if set(validation_records) != expected_records:
+            raise RuntimeError(f"Outer OOF coverage is incomplete for repeat={repeat}.")
 
-                    # Refit a fresh model on all outer-training segments.
-                    pipe = make_pipeline(clone(model))
-                    pipe.fit(x_train, y_train)
+        splits_by_repeat[repeat] = repeat_splits
 
-                    # Score only the untouched outer-validation set.
-                    val_scores = predict_preterm_scores(pipe, x_val)
-                    val_records_df = aggregate_to_record(meta_val, val_scores)
+    return splits_by_repeat, split_rows
 
-                    # Fold-level recording metrics are diagnostic only.
-                    record_metrics = evaluate_predictions(
-                        val_records_df["label"].to_numpy(),
-                        val_records_df["score"].to_numpy(),
-                        threshold,
-                    )
 
-                    row = {
-                        "experiment": name,
-                        "model": model_name,
-                        "repeat": repeat,
-                        "fold": fold,
-                        # Saved as 4 decimals; the full-precision threshold was
-                        # already used above for the actual predictions.
-                        "threshold": round(float(threshold), OUTPUT_DECIMALS),
-                        "n_train_segments": len(train_idx),
-                        "n_val_segments": len(val_idx),
-                        "n_train_records": len(train_records),
-                        "n_val_records": len(val_records_df),
-                    }
+def evaluate_model_repeat(
+    experiment_name: str,
+    model_name: str,
+    model: object,
+    repeat: int,
+    splits: List[Tuple[np.ndarray, np.ndarray]],
+    df: pd.DataFrame,
+    x: pd.DataFrame,
+    y: np.ndarray,
+    groups: np.ndarray,
+    record_col: str,
+    fingerprint: str,
+) -> Dict:
+    """Evaluate all outer folds for one model/repeat as one atomic unit."""
+    fold_rows: List[Dict] = []
+    record_pred_rows: List[pd.DataFrame] = []
 
-                    for k, v in record_metrics.items():
-                        row[f"record_{k}"] = (
-                            round(float(v), OUTPUT_DECIMALS)
-                            if np.isfinite(v)
-                            else np.nan
-                        )
+    for fold, (train_idx, val_idx) in enumerate(splits):
+        x_train = x.iloc[train_idx]
+        x_val = x.iloc[val_idx]
+        y_train = y[train_idx]
+        groups_train = groups[train_idx]
+        meta_train = make_meta(df.iloc[train_idx], record_col)
+        meta_val = make_meta(df.iloc[val_idx], record_col)
 
-                    fold_rows.append(row)
+        train_records = set(meta_train["record"])
+        val_records = set(meta_val["record"])
+        overlap = train_records.intersection(val_records)
+        if overlap:
+            raise RuntimeError(
+                f"Record leakage found in repeat={repeat}, fold={fold}: "
+                f"{sorted(overlap)}"
+            )
 
-                    # Save only recording-level predictions. Segment-level
-                    # predictions and segment-level metrics are deliberately omitted.
-                    rec_pred = val_records_df.copy()
-                    rec_pred["experiment"] = name
-                    rec_pred["model"] = model_name
-                    rec_pred["repeat"] = repeat
-                    rec_pred["fold"] = fold
-                    rec_pred["threshold"] = threshold
-                    rec_pred["prediction"] = (
-                        rec_pred["score"].to_numpy() >= threshold
-                    ).astype(int)
-                    record_pred_rows.append(rec_pred)
+        threshold = choose_threshold_with_inner_group_cv(
+            model=model,
+            x_train=x_train,
+            y_train=y_train,
+            groups_train=groups_train,
+            meta_train=meta_train,
+            repeat=repeat,
+            fold=fold,
+        )
 
-                except Exception as e:
-                    print(
-                        f"Failed: experiment={name}, repeat={repeat}, "
-                        f"fold={fold}, model={model_name}: {e}"
-                    )
+        pipe = make_pipeline(clone(model))
+        pipe.fit(x_train, y_train)
+        val_scores = predict_preterm_scores(pipe, x_val)
+        val_records_df = aggregate_to_record(meta_val, val_scores)
+        record_metrics = evaluate_predictions(
+            val_records_df["label"].to_numpy(),
+            val_records_df["score"].to_numpy(),
+            threshold,
+        )
 
-    if not fold_rows or not record_pred_rows:
-        print(f"No results produced for {name}")
-        return
+        row = {
+            "experiment": experiment_name,
+            "model": model_name,
+            "repeat": repeat,
+            "fold": fold,
+            "threshold": round(float(threshold), OUTPUT_DECIMALS),
+            "n_train_segments": len(train_idx),
+            "n_val_segments": len(val_idx),
+            "n_train_records": len(train_records),
+            "n_val_records": len(val_records_df),
+        }
+        for key, value in record_metrics.items():
+            row[f"record_{key}"] = (
+                round(float(value), OUTPUT_DECIMALS)
+                if np.isfinite(value)
+                else np.nan
+            )
+        fold_rows.append(row)
 
+        rec_pred = val_records_df.copy()
+        rec_pred["experiment"] = experiment_name
+        rec_pred["model"] = model_name
+        rec_pred["repeat"] = repeat
+        rec_pred["fold"] = fold
+        rec_pred["threshold"] = threshold
+        rec_pred["prediction"] = (
+            rec_pred["score"].to_numpy() >= threshold
+        ).astype(int)
+        record_pred_rows.append(rec_pred)
+
+    return {
+        "status": "complete",
+        "fingerprint": fingerprint,
+        "experiment": experiment_name,
+        "model": model_name,
+        "repeat": repeat,
+        "fold_rows": fold_rows,
+        "record_predictions": pd.concat(record_pred_rows, ignore_index=True),
+    }
+
+
+def evaluate_model_repeat_safely(**kwargs: object) -> Dict:
+    """Return task failures to the parent without saving partial fold results."""
+    try:
+        return evaluate_model_repeat(**kwargs)
+    except Exception as exc:
+        return {
+            "status": "failed",
+            "experiment": kwargs["experiment_name"],
+            "model": kwargs["model_name"],
+            "repeat": kwargs["repeat"],
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def make_task_fingerprint(
+    csv_digest: str,
+    feature_cols: List[str],
+    model_name: str,
+    model: object,
+) -> str:
+    state = repr(
+        (
+            CHECKPOINT_VERSION,
+            csv_digest,
+            feature_cols,
+            model_name,
+            sorted(model.get_params(deep=True).items()),
+            N_SPLITS,
+            RANDOM_SEED,
+            RECORD_AGGREGATION,
+            THRESHOLD_METRIC,
+        )
+    )
+    return hashlib.sha256(state.encode("utf-8")).hexdigest()
+
+
+def checkpoint_path(out_dir: Path, model_name: str, repeat: int) -> Path:
+    model_slug = re.sub(r"[^a-z0-9]+", "_", model_name.lower()).strip("_")
+    return out_dir / ".checkpoints" / model_slug / f"repeat_{repeat:03d}.joblib"
+
+
+def validate_task_result(
+    result: Dict,
+    fingerprint: str,
+    model_name: str,
+    repeat: int,
+    expected_records: set[str],
+) -> bool:
+    if result.get("status") != "complete":
+        return False
+    if result.get("fingerprint") != fingerprint:
+        return False
+    if result.get("model") != model_name or result.get("repeat") != repeat:
+        return False
+    if len(result.get("fold_rows", [])) != N_SPLITS:
+        return False
+
+    predictions = result.get("record_predictions")
+    if not isinstance(predictions, pd.DataFrame) or predictions.empty:
+        return False
+    records = predictions["record"].astype(str)
+    if records.duplicated().any():
+        return False
+    return set(records) == expected_records
+
+
+def load_valid_checkpoint(
+    path: Path,
+    fingerprint: str,
+    model_name: str,
+    repeat: int,
+    expected_records: set[str],
+) -> Dict | None:
+    if not path.exists():
+        return None
+    try:
+        result = joblib.load(path)
+    except Exception as exc:
+        print(f"Ignoring unreadable checkpoint {path}: {exc}")
+        return None
+    if validate_task_result(
+        result, fingerprint, model_name, repeat, expected_records
+    ):
+        return result
+    print(f"Ignoring stale or incomplete checkpoint: {path}")
+    return None
+
+
+def save_checkpoint_atomic(path: Path, result: Dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_name(path.name + f".{os.getpid()}.tmp")
+    joblib.dump(result, temp_path, compress=3)
+    os.replace(temp_path, path)
+
+
+def run_one_feature_file(
+    name: str,
+    csv_path: Path,
+    n_repeats: int,
+    n_jobs: int,
+    selected_models: List[str] | None,
+    resume: bool,
+) -> None:
+    if not csv_path.exists():
+        raise FileNotFoundError(f"Missing feature table for {name}: {csv_path}")
+
+    print("\n==============================")
+    print(f"Running: {name}")
+    print(f"CSV    : {csv_path}")
+    print("==============================")
+
+    df = pd.read_csv(csv_path)
+    x, y, groups, record_col, feature_cols = get_feature_matrix(df)
+    expected_records = set(df[record_col].astype(str).unique())
+    print(
+        f"Rows: {len(df)} | Features: {x.shape[1]} | "
+        f"Records: {len(expected_records)}"
+    )
+
+    all_models = get_models()
+    if selected_models is None:
+        models = all_models
+    else:
+        unknown = sorted(set(selected_models) - set(all_models))
+        if unknown:
+            raise ValueError(f"Unknown model(s): {unknown}")
+        models = {model_name: all_models[model_name] for model_name in selected_models}
+
+    splits_by_repeat, split_rows = build_outer_splits(x, y, groups, n_repeats)
     out_dir = RESULT_DIR / name
     out_dir.mkdir(parents=True, exist_ok=True)
+    csv_digest = sha256_file(csv_path)
 
-    fold_results = pd.DataFrame(fold_rows)
-    record_predictions = pd.concat(record_pred_rows, ignore_index=True)
-    splits = pd.DataFrame(split_rows)
+    completed: Dict[Tuple[str, int], Dict] = {}
+    pending: List[Tuple[str, object, int, str]] = []
+    for repeat in range(n_repeats):
+        for model_name, model in models.items():
+            fingerprint = make_task_fingerprint(
+                csv_digest, feature_cols, model_name, model
+            )
+            path = checkpoint_path(out_dir, model_name, repeat)
+            result = (
+                load_valid_checkpoint(
+                    path, fingerprint, model_name, repeat, expected_records
+                )
+                if resume
+                else None
+            )
+            if result is not None:
+                completed[(model_name, repeat)] = result
+            else:
+                pending.append((model_name, model, repeat, fingerprint))
 
-    # ------------------------------------------------------------------
-    # Issue 2 fix:
-    # Do NOT average metrics over the 150 validation folds.
-    # Pool the five outer-fold predictions within each repeat so that
-    # every recording contributes exactly once, then calculate one set
-    # of recording-level metrics for that complete 26-record OOF set.
-    # ------------------------------------------------------------------
+    if completed:
+        print(f"Resuming from {len(completed)} completed model/repeat checkpoint(s).")
+    print(f"Pending complete model/repeat jobs: {len(pending)}")
+
+    if pending:
+        with parallel_config(backend="loky", inner_max_num_threads=1):
+            generated_results = Parallel(
+                n_jobs=n_jobs,
+                return_as="generator_unordered",
+            )(
+                delayed(evaluate_model_repeat_safely)(
+                    experiment_name=name,
+                    model_name=model_name,
+                    model=model,
+                    repeat=repeat,
+                    splits=splits_by_repeat[repeat],
+                    df=df,
+                    x=x,
+                    y=y,
+                    groups=groups,
+                    record_col=record_col,
+                    fingerprint=fingerprint,
+                )
+                for model_name, model, repeat, fingerprint in pending
+            )
+
+            for result in generated_results:
+                model_name = result["model"]
+                repeat = int(result["repeat"])
+                if result.get("status") != "complete":
+                    print(
+                        f"Failed: experiment={name}, model={model_name}, "
+                        f"repeat={repeat}: {result.get('error')}"
+                    )
+                    continue
+
+                fingerprint = result["fingerprint"]
+                if not validate_task_result(
+                    result, fingerprint, model_name, repeat, expected_records
+                ):
+                    print(
+                        f"Rejected incomplete result: experiment={name}, "
+                        f"model={model_name}, repeat={repeat}"
+                    )
+                    continue
+
+                save_checkpoint_atomic(
+                    checkpoint_path(out_dir, model_name, repeat), result
+                )
+                completed[(model_name, repeat)] = result
+                print(
+                    f"Checkpointed: {name} | {model_name} | "
+                    f"repeat {repeat + 1}/{n_repeats}"
+                )
+
+    expected_tasks = {
+        (model_name, repeat)
+        for repeat in range(n_repeats)
+        for model_name in models
+    }
+    missing_tasks = sorted(expected_tasks - set(completed))
+    if missing_tasks:
+        raise RuntimeError(
+            "Classification is incomplete; final summaries were not written. "
+            f"Rerun to resume. Missing jobs: {missing_tasks}"
+        )
+
+    ordered_results = [
+        completed[(model_name, repeat)]
+        for repeat in range(n_repeats)
+        for model_name in models
+    ]
+    fold_results = pd.DataFrame(
+        row for result in ordered_results for row in result["fold_rows"]
+    ).sort_values(["repeat", "fold", "model"], kind="stable")
+    record_predictions = pd.concat(
+        [result["record_predictions"] for result in ordered_results],
+        ignore_index=True,
+    ).sort_values(["repeat", "fold", "model", "record"], kind="stable")
+    splits = pd.DataFrame(split_rows).sort_values(["repeat", "fold"], kind="stable")
+
     repeat_metrics = build_repeat_level_metrics(
         record_predictions=record_predictions,
         expected_records=expected_records,
         experiment_name=name,
-    )
+    ).sort_values(["model", "repeat"], kind="stable")
 
     record_metric_cols = [
         "record_accuracy",
@@ -656,30 +907,21 @@ def run_one_feature_file(name: str, csv_path: Path) -> None:
         "record_roc_auc",
         "record_pr_auc",
     ]
-
     summary = repeat_metrics.groupby("model")[record_metric_cols].agg(["mean", "std"])
-    summary.columns = [f"{a}_{b}" for a, b in summary.columns]
-    summary = summary.reset_index()
-    summary = round_numeric_for_output(summary)
+    summary.columns = [f"{first}_{second}" for first, second in summary.columns]
+    summary = round_numeric_for_output(summary.reset_index())
 
-    # Save all numeric outputs with four decimal places. Calculations use
-    # full-precision model scores and thresholds; rounding is applied only
-    # to reported/stored metric values and saved diagnostic scores.
-    fold_results_out = round_numeric_for_output(fold_results)
-    record_predictions_out = round_numeric_for_output(record_predictions)
-    repeat_metrics_out = round_numeric_for_output(repeat_metrics)
-
-    fold_results_out.to_csv(
+    round_numeric_for_output(fold_results).to_csv(
         out_dir / "fold_metrics.csv",
         index=False,
         float_format=f"%.{OUTPUT_DECIMALS}f",
     )
-    record_predictions_out.to_csv(
+    round_numeric_for_output(record_predictions).to_csv(
         out_dir / "record_predictions.csv",
         index=False,
         float_format=f"%.{OUTPUT_DECIMALS}f",
     )
-    repeat_metrics_out.to_csv(
+    round_numeric_for_output(repeat_metrics).to_csv(
         out_dir / "repeat_metrics.csv",
         index=False,
         float_format=f"%.{OUTPUT_DECIMALS}f",
@@ -691,11 +933,10 @@ def run_one_feature_file(name: str, csv_path: Path) -> None:
     )
     splits.to_csv(out_dir / "splits.csv", index=False)
 
-    with open(out_dir / "feature_columns.txt", "w", encoding="utf-8") as f:
-        for col in feature_cols:
-            f.write(col + "\n")
+    with (out_dir / "feature_columns.txt").open("w", encoding="utf-8") as stream:
+        for column in feature_cols:
+            stream.write(column + "\n")
 
-    print("\nRecord-level summary (30 repeat-level OOF evaluations):")
     display_cols = [
         "model",
         "record_accuracy_mean",
@@ -705,23 +946,122 @@ def run_one_feature_file(name: str, csv_path: Path) -> None:
         "record_roc_auc_mean",
         "record_pr_auc_mean",
     ]
-
+    print(f"\nRecord-level summary ({n_repeats} complete OOF repetitions):")
     print(
         summary[display_cols].to_string(
             index=False,
-            float_format=lambda v: f"{v:.{OUTPUT_DECIMALS}f}",
+            float_format=lambda value: f"{value:.{OUTPUT_DECIMALS}f}",
         )
     )
-
     print(f"\nSaved outputs to: {out_dir}")
 
 
-def main() -> None:
-    RESULT_DIR.mkdir(parents=True, exist_ok=True)
+def materialize_result_alias(alias_name: str, source_name: str) -> None:
+    """Create IMF1-selection outputs from the already-classified main result."""
+    source_dir = RESULT_DIR / source_name
+    alias_dir = RESULT_DIR / alias_name
+    if not source_dir.exists():
+        raise FileNotFoundError(
+            f"Cannot create {alias_name}; source results are missing: {source_dir}"
+        )
+    alias_dir.mkdir(parents=True, exist_ok=True)
 
+    for filename in ["fold_metrics.csv", "record_predictions.csv", "repeat_metrics.csv"]:
+        frame = pd.read_csv(source_dir / filename)
+        frame["experiment"] = alias_name
+        frame.to_csv(
+            alias_dir / filename,
+            index=False,
+            float_format=f"%.{OUTPUT_DECIMALS}f",
+        )
+
+    for filename in ["summary_metrics.csv", "splits.csv", "feature_columns.txt"]:
+        shutil.copyfile(source_dir / filename, alias_dir / filename)
+    print(f"Reused {source_name} results as {alias_name} (no reclassification).")
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Repeated grouped-CV classification for TPEHGT features."
+    )
+    parser.add_argument(
+        "--n-repeats",
+        type=int,
+        default=DEBUG_N_REPEATS,
+        help=f"Development repetition count; default is the final N_REPEATS={N_REPEATS}.",
+    )
+    parser.add_argument(
+        "--experiments",
+        nargs="+",
+        default=DEBUG_EXPERIMENTS,
+        help="Run only these experiment names.",
+    )
+    parser.add_argument(
+        "--models",
+        nargs="+",
+        default=DEBUG_MODELS,
+        help="Run only these model names (quote names containing spaces).",
+    )
+    parser.add_argument(
+        "--n-jobs",
+        type=int,
+        default=N_JOBS,
+        help="Parallel model/repeat workers (default: config.N_JOBS).",
+    )
+    parser.add_argument(
+        "--no-resume",
+        action="store_true",
+        help="Ignore existing checkpoints for this invocation.",
+    )
+    return parser.parse_args()
+
+
+def main(
+    n_repeats: int | None = None,
+    experiments: List[str] | None = None,
+    models: List[str] | None = None,
+    n_jobs: int = N_JOBS,
+    resume: bool = CLASSIFICATION_RESUME,
+) -> None:
+    RESULT_DIR.mkdir(parents=True, exist_ok=True)
+    effective_repeats = N_REPEATS if n_repeats is None else n_repeats
+    if not 1 <= effective_repeats <= N_REPEATS:
+        raise ValueError(f"n_repeats must be between 1 and {N_REPEATS}.")
+    if n_jobs == 0:
+        raise ValueError("n_jobs cannot be zero.")
+
+    available_experiments = [*FEATURE_FILES, *RESULT_ALIASES]
+    requested = available_experiments if experiments is None else experiments
+    unknown = sorted(set(requested) - set(available_experiments))
+    if unknown:
+        raise ValueError(f"Unknown experiment(s): {unknown}")
+
+    canonical_requested = {
+        RESULT_ALIASES.get(experiment_name, experiment_name)
+        for experiment_name in requested
+    }
     for name, csv_path in FEATURE_FILES.items():
-        run_one_feature_file(name, csv_path)
+        if name in canonical_requested:
+            run_one_feature_file(
+                name=name,
+                csv_path=csv_path,
+                n_repeats=effective_repeats,
+                n_jobs=n_jobs,
+                selected_models=models,
+                resume=resume,
+            )
+
+    for alias_name, source_name in RESULT_ALIASES.items():
+        if alias_name in requested:
+            materialize_result_alias(alias_name, source_name)
 
 
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    main(
+        n_repeats=args.n_repeats,
+        experiments=args.experiments,
+        models=args.models,
+        n_jobs=args.n_jobs,
+        resume=CLASSIFICATION_RESUME and not args.no_resume,
+    )

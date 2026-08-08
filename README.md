@@ -97,6 +97,28 @@ python make_plots.py
 
 `extract_features.py` performs EMD for all configured segments and may take time. `classify_groupwise_cv.py` runs 30 repeats of five-fold grouped cross-validation for nine classifiers. Outputs are deterministic where supported, using the seed in `config.py`.
 
+Both expensive stages use `N_JOBS` from `config.py` (`-1` uses all available
+CPUs). Classification writes an atomic checkpoint after every complete
+model/repeat job. Rerunning the same command automatically resumes compatible
+checkpoints; use `--no-resume` only when a fresh computation is required.
+
+For a short development check without changing the final defaults:
+
+```bash
+python classify_groupwise_cv.py \
+  --n-repeats 1 \
+  --experiments fixed_3min_imf1 \
+  --models "Random Forest" "Logistic Regression" \
+  --n-jobs 2
+```
+
+The complete manuscript analysis remains `N_REPEATS = 30`, `N_SPLITS = 5`
+and is run without development arguments:
+
+```bash
+python classify_groupwise_cv.py
+```
+
 Signal-level diagnostic figures are optional and can generate thousands of files:
 
 ```bash

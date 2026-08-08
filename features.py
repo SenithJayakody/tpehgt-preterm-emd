@@ -174,6 +174,25 @@ def get_imf(
     return imfs[idx].copy()
 
 
+def get_imf_from_decomposition(
+    imfs: np.ndarray,
+    signal_length: int,
+    imf_number: int,
+) -> np.ndarray:
+    """Return one IMF from an existing decomposition.
+
+    This has the same missing-IMF behavior as :func:`get_imf`, but allows a
+    caller that needs several IMF numbers to run EMD only once.
+    """
+    imfs = np.asarray(imfs, dtype=float)
+    idx = imf_number_to_index(imf_number)
+
+    if idx >= imfs.shape[0]:
+        return np.full(signal_length, np.nan, dtype=float)
+
+    return imfs[idx].copy()
+
+
 def safe_cv(mean_value: float, std_value: float) -> float:
     return float(std_value / (mean_value + 1e-12))
 
@@ -595,6 +614,27 @@ def extract_imf_features_from_segment(
 
     imf_signal = get_imf(x, imf_number=imf_number, max_imfs=cfg.max_imfs)
 
+    return extract_features_from_signal(imf_signal, cfg)
+
+
+def extract_imf_features_from_decomposition(
+    imfs: np.ndarray,
+    signal_length: int,
+    fs: float,
+    burst_threshold_sec: float,
+    imf_number: int = 1,
+) -> Dict[str, float]:
+    """Extract features for one IMF from an already-computed decomposition."""
+    cfg = FeatureConfig(
+        fs=fs,
+        imf_number=imf_number,
+        burst_tau_sec=burst_threshold_sec,
+    )
+    imf_signal = get_imf_from_decomposition(
+        imfs=imfs,
+        signal_length=signal_length,
+        imf_number=imf_number,
+    )
     return extract_features_from_signal(imf_signal, cfg)
 
 
