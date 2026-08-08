@@ -1,0 +1,49 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the associated paper and the TPEHGT dataset."
+title: "TPEHGT EHG preterm prediction using empirical mode decomposition"
+type: software
+authors:
+  - family-names: Jayakody
+    given-names: Senith
+    email: senith@eng.pdn.ac.lk
+  - family-names: Tilakarathna
+    given-names: Umesha
+  - family-names: Jayasooriya
+    given-names: Kalana
+  - family-names: Godaliyadda
+    given-names: Roshan
+  - family-names: Ekanayake
+    given-names: Parakrama
+  - family-names: Nawinne
+    given-names: Isuru
+  - family-names: Rathnayake
+    given-names: Chathura
+version: 1.0.0
+date-released: 2026-06-19
+repository-code: "https://github.com/SenithJayakody/tpehgt-preterm-emd"
+url: "https://github.com/SenithJayakody/tpehgt-preterm-emd"
+license: MIT
+keywords:
+  - electrohysterography
+  - preterm birth
+  - empirical mode decomposition
+  - machine learning
+  - biomedical signal processing
+preferred-citation:
+  type: article
+  title: "Preterm birth prediction from electrohysterography using empirical mode decomposition and interpretable machine learning"
+  authors:
+    - family-names: Tilakarathna
+      given-names: Umesha
+    - family-names: Jayakody
+      given-names: Senith
+    - family-names: Jayasooriya
+      given-names: Kalana
+    - family-names: Godaliyadda
+      given-names: Roshan
+    - family-names: Ekanayake
+      given-names: Parakrama
+    - family-names: Nawinne
+      given-names: Isuru
+    - family-names: Rathnayake
+      given-names: Chathura

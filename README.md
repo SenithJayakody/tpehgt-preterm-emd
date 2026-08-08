@@ -1,89 +1,133 @@
-# TPEHGT Preterm EHG EMD Analysis
+# Preterm birth prediction from EHG using EMD
 
-Code for reproducing the empirical mode decomposition (EMD) based electrohysterography (EHG) preterm birth prediction experiments reported in the manuscript.
+[![License: MIT](https://img.shields.io/badge/Code%20license-MIT-blue.svg)](LICENSE)
+[![Data: ODC-By 1.0](https://img.shields.io/badge/Data%20license-ODC--By%201.0-green.svg)](DATA_LICENSE.md)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
+[![Dataset DOI](https://img.shields.io/badge/Dataset-10.13026%2FC2166R-blue.svg)](https://doi.org/10.13026/C2166R)
 
-The pipeline uses the Term-Preterm EHG DataSet with Tocogram (TPEHGT) and evaluates record-wise preterm birth classification from dataset-provided filtered EHG channels.
+Official research code and reproducibility materials for **“Preterm birth prediction from electrohysterography using empirical mode decomposition and interpretable machine learning.”**
 
-## Repository Contents
+This project evaluates whether empirical mode decomposition (EMD) improves record-level preterm birth prediction from electrohysterography (EHG). It uses the public Term–Preterm EHG Dataset with Tocogram (TPEHGT), leakage-safe grouped cross-validation, and interpretable handcrafted features.
 
-- `config.py` - analysis parameters, paths, feature settings, and cross-validation settings.
-- `io_readers.py` - TPEHGT WFDB loading, label parsing, contraction intervals, and fixed-window segmentation.
-- `features.py` - EMD decomposition and feature extraction.
-- `extract_features.py` - generates feature tables for contraction and fixed 3-minute analyses.
-- `classify_groupwise_cv.py` - repeated record-wise grouped cross-validation and metric summaries.
-- `requirements.txt` - Python dependencies.
+> Research software only. This repository is not a medical device and its outputs must not be used for clinical diagnosis or patient care.
 
-## Data
+![Comparison of the best-performing models](outputs/plots/paper/best_model_comparison.png)
 
-The TPEHGT WFDB files are not included in this repository.
+## Method overview
 
-Download the TPEHGT dataset from PhysioNet and place the WFDB records in:
+The main paper pipeline uses the dataset-provided filtered EHG channels (0.08–5.0 Hz):
 
 ```text
-data/tpehgt/
+filtered EHG -> 3-minute or contraction segmentation -> EMD -> IMF1
+             -> feature extraction -> grouped record-wise CV -> record prediction
 ```
 
-The folder should contain files such as:
+The baseline extracts the same features directly from each filtered EHG segment without EMD. All segments from a recording remain in the same fold, preventing record-level leakage. Predictions are aggregated at recording level using the maximum segment probability.
+
+## Main result
+
+For fixed three-minute IMF1 features, the best Random Forest model achieved:
+
+| Metric | Score |
+|---|---:|
+| Accuracy | 0.840 |
+| F1-score | 0.789 |
+| Balanced accuracy | 0.849 |
+| Matthews correlation coefficient | 0.721 |
+| ROC-AUC | 0.848 |
+| PR-AUC | 0.922 |
+
+These results are based on 26 recordings and require validation on larger independent cohorts. Detailed tables, predictions, and publication figures are available under [`outputs/`](outputs/).
+
+## Repository structure
 
 ```text
-tpehgt_p001.dat
-tpehgt_p001.hea
-tpehgt_p001.atr
-tpehgt_t001.dat
-tpehgt_t001.hea
-tpehgt_t001.atr
+.
+├── data/tpehgt/1.0.0/       # TPEHGT v1.0.0 (third-party data)
+├── outputs/features/        # extracted feature tables
+├── outputs/results/         # fold-, segment-, and record-level results
+├── outputs/plots/paper/     # publication figures and supporting tables
+├── config.py                # experiment settings and paths
+├── io_readers.py            # WFDB loading and metadata parsing
+├── features.py              # EMD and feature definitions
+├── extract_features.py      # feature-extraction pipeline
+├── classify_groupwise_cv.py # grouped repeated cross-validation
+├── make_plots.py            # result figures
+└── make_signal_plots.py     # signal, IMF, ACF, and PSD diagnostics
 ```
 
-## Python Setup
+## Installation
 
-Recommended on Windows PowerShell:
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-On macOS/Linux:
+Python 3.10 or newer is required.
 
 ```bash
+git clone https://github.com/SenithJayakody/tpehgt-preterm-emd.git
+cd tpehgt-preterm-emd
 python -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-pip install -r requirements.txt
 ```
 
-## Reproduce Results
+Activate the environment:
 
-Run the scripts from the repository root in this order:
+```bash
+# Linux/macOS
+source .venv/bin/activate
 
-```powershell
+# Windows PowerShell
+.venv\Scripts\Activate.ps1
+```
+
+Then install the dependencies:
+
+```bash
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+## Reproduce the analysis
+
+Run the stages from the repository root:
+
+```bash
 python io_readers.py
 python extract_features.py
 python classify_groupwise_cv.py
+python make_plots.py
 ```
 
-Generated files are written to:
+`extract_features.py` performs EMD for all configured segments and may take time. `classify_groupwise_cv.py` runs 30 repeats of five-fold grouped cross-validation for nine classifiers. Outputs are deterministic where supported, using the seed in `config.py`.
 
-```text
-outputs/
+Signal-level diagnostic figures are optional and can generate thousands of files:
+
+```bash
+python make_signal_plots.py
 ```
 
-## Main Analysis Settings
+For a small diagnostic run, first set `MAX_SIGNAL_SEGMENTS_PER_RECORD_MODE = 1` in `config.py`. Core experiment parameters—including sampling rate, channels, segmentation, IMF selection, cross-validation, aggregation, and random seed—are documented in that file.
 
-The manuscript pipeline uses:
+## Data
 
-- Filtered EHG channels from the TPEHGT dataset: channels 1, 3, and 5.
-- No additional filtering before EMD.
-- Fixed non-overlapping 3-minute windows and contraction-annotation windows.
-- First four IMFs evaluated separately.
-- Fourteen features per EHG channel.
-- Repeated 5-fold stratified grouped cross-validation.
-- Record-level grouping to prevent segments from the same recording appearing in both train and validation folds.
-- Maximum segment probability aggregation for record-level prediction.
-- MCC-based threshold selection on training folds.
+This analysis uses **TPEHGT v1.0.0**, published by Franc Jager on PhysioNet:
+
+- Dataset: <https://doi.org/10.13026/C2166R>
+- Dataset page: <https://physionet.org/content/tpehgt/1.0.0/>
+- License: Open Data Commons Attribution License 1.0 (ODC-By-1.0)
+
+The analysis includes the 13 preterm and 13 term recordings; the five non-pregnant recordings are excluded. See [`DATA_LICENSE.md`](DATA_LICENSE.md) for attribution and licensing boundaries.
 
 ## Citation
 
-If you use this code, please cite the associated manuscript and the original TPEHGT dataset.
+If you use this code, please cite the associated paper. Until its final bibliographic details are available, use the repository’s GitHub **Cite this repository** control, powered by [`CITATION.cff`](CITATION.cff). Please also cite both the TPEHGT dataset paper and PhysioNet as requested on the dataset page.
+
+```bibtex
+@article{tilakarathna_preterm_emd,
+  title   = {Preterm birth prediction from electrohysterography using empirical mode decomposition and interpretable machine learning},
+  author  = {Tilakarathna, Umesha and Jayakody, Senith and Jayasooriya, Kalana and Godaliyadda, Roshan and Ekanayake, Parakrama and Nawinne, Isuru and Rathnayake, Chathura},
+  note    = {Manuscript submitted for publication; software available at https://github.com/SenithJayakody/tpehgt-preterm-emd}
+}
+```
+
+## License and contact
+
+Original source code is released under the [MIT License](LICENSE). The dataset and included third-party article are not relicensed under MIT; their terms are described in [`DATA_LICENSE.md`](DATA_LICENSE.md).
+
+Questions about the implementation can be sent to Senith Jayakody at [senith@eng.pdn.ac.lk](mailto:senith@eng.pdn.ac.lk).
