@@ -85,7 +85,7 @@ PERM_NORMALIZE = True
 N_SPLITS = 5
 N_REPEATS = 30
 RANDOM_SEED = 42
-RECORD_AGGREGATION = "q75"
+RECORD_AGGREGATION = "max"
 THRESHOLD_METRIC = "mcc"
 
 # Runtime controls. ``-1`` uses all available CPUs. Estimators that expose
