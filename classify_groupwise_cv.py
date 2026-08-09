@@ -291,6 +291,15 @@ def aggregate_to_record(meta: pd.DataFrame, scores: np.ndarray) -> pd.DataFrame:
             label=("label", "first"),
             score=("score", "mean"),
         )
+    
+    if RECORD_AGGREGATION == "q75":
+        return temp.groupby("record", as_index=False).agg(
+            label=("label", "first"),
+            score=("score", lambda values: values.quantile(
+                0.75,
+                interpolation="linear",
+            )),
+        )
 
     raise ValueError(f"Unknown RECORD_AGGREGATION: {RECORD_AGGREGATION}")
 
