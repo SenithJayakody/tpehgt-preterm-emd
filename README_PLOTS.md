@@ -10,18 +10,26 @@ The figure scripts are located in the repository root beside `config.py`,
 - `plot_performance_figures.py` — Figs. 6–7 and their underlying CSV values.
 - `plot_feature_distributions.py` — current 14-panel Fig. 8 and its record-level/effect-size CSVs.
 - `grouped_permutation_importance.py` — recomputes current RF grouped importance and generates Fig. 9.
-- `run_all_with_plots.ps1` — complete analysis plus figure-generation sequence.
+- `run_all.ps1` — complete analysis plus figure-generation sequence.
 
 All final plots are written to `outputs/plots/paper/` as both PNG (300 dpi) and vector PDF.
 
 ## Recommended run order
 
+Run the complete sequence from the repository root:
+
+```bash
+bash -e run_all.ps1
+```
+
+The equivalent individual commands are:
+
 ```bash
 python io_readers.py
 python extract_features.py
 python classify_groupwise_cv.py
-python grouped_permutation_importance.py
-python plot_signal_figures.py --record <representative_record> --channel <ehg1|ehg2|ehg3> --segment-id <0-9>
+python grouped_permutation_importance.py --n-repeats 30 --permutations-per-fold 1
+python plot_signal_figures.py --record tpehgt_p001 --channel ehg2 --segment-id 0
 python plot_performance_figures.py
 python plot_feature_distributions.py
 ```

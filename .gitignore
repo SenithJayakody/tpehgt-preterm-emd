@@ -34,6 +34,11 @@ data/raw/
 # Generated analysis outputs
 outputs/*
 !outputs/.gitkeep
+!outputs/plots/
+outputs/plots/*
+!outputs/plots/paper/
+outputs/plots/paper/*
+!outputs/plots/paper/roc_pr_curves.png
 !data/
 !data/tpehgt/
 !data/tpehgt/.gitkeep

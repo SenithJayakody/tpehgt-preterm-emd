@@ -20,22 +20,26 @@ filtered EHG -> 3-minute or contraction segmentation -> EMD -> IMF1
              -> feature extraction -> grouped record-wise CV -> record prediction
 ```
 
-The baseline extracts the same features directly from each filtered EHG segment without EMD. Cross-validation folds are stratified using one row per recording and then expanded to include all corresponding segments, preventing record-level leakage while preserving record-level class balance. Predictions are aggregated at recording level using the maximum segment probability.
+The baseline extracts the same features directly from each filtered EHG segment without EMD. Cross-validation folds are stratified using one row per recording and then expanded to include all corresponding segments, preventing record-level leakage while preserving record-level class balance. Predictions are aggregated at recording level using the maximum segment probability. Peak-derived features that are undefined when a segment contains too few detected peaks are mean-imputed within each training fold.
 
 ## Main result
 
 For fixed three-minute IMF1 features, the Random Forest achieved the strongest overall performance, averaged across 30 complete out-of-fold repetitions:
 
-| Metric | Score |
+| Metric | Mean ± SD |
 |---|---:|
-| Accuracy | 0.8308 |
-| F1-score | 0.7969 |
-| Balanced accuracy | 0.8308 |
-| Matthews correlation coefficient | 0.6998 |
-| ROC-AUC | 0.8157 |
-| Average Precision | 0.8877 |
+| Accuracy | 0.8308 ± 0.0399 |
+| F1-score | 0.7969 ± 0.0546 |
+| Balanced accuracy | 0.8308 ± 0.0399 |
+| Matthews correlation coefficient | 0.6998 ± 0.0714 |
+| ROC-AUC | 0.8157 ± 0.0285 |
+| Average Precision | 0.8877 ± 0.0333 |
 
 These results are based on 26 recordings and require validation on larger independent cohorts. Running the analysis generates detailed metrics, predictions, and fold assignments under `outputs/results/`.
+
+![Repeated out-of-fold ROC and precision-recall curves for the fixed three-minute IMF1 experiment](outputs/plots/paper/roc_pr_curves.png)
+
+The curves pool all repeated out-of-fold recording scores for visualization. Their pooled metrics therefore differ slightly from the mean of the 30 repeat-level values reported in the table.
 
 ## Repository structure
 
@@ -49,7 +53,12 @@ These results are based on 26 recordings and require validation on larger indepe
 ├── features.py              # EMD and feature definitions
 ├── extract_features.py      # feature-extraction pipeline
 ├── classify_groupwise_cv.py # grouped repeated cross-validation
-└── run_all.ps1              # complete analysis pipeline
+├── grouped_permutation_importance.py # grouped RF importance analysis
+├── plot_signal_figures.py   # signal-processing figures
+├── plot_performance_figures.py # performance figures
+├── plot_feature_distributions.py # feature-distribution figure
+├── README_PLOTS.md          # figure methods and reproduction details
+└── run_all.ps1              # complete analysis and figure pipeline
 ```
 
 ## Installation
@@ -82,7 +91,7 @@ python -m pip install -r requirements.txt
 
 ## Reproduce the analysis
 
-Run the complete pipeline from the repository root. The script contains portable Python commands and can be invoked with Bash on Linux or macOS:
+Run the complete analysis and figure pipeline from the repository root. The single runner contains portable Python commands and is invoked with Bash on Linux or macOS so that `-e` stops immediately if any stage fails:
 
 ```bash
 bash -e run_all.ps1
@@ -94,9 +103,13 @@ Alternatively, run each stage directly:
 python io_readers.py
 python extract_features.py
 python classify_groupwise_cv.py
+python grouped_permutation_importance.py --n-repeats 30 --permutations-per-fold 1
+python plot_signal_figures.py --record tpehgt_p001 --channel ehg2 --segment-id 0
+python plot_performance_figures.py
+python plot_feature_distributions.py
 ```
 
-`extract_features.py` performs EMD for all configured segments and may take time. `classify_groupwise_cv.py` runs 30 repeats of five-fold grouped cross-validation for nine classifiers. Outputs are deterministic where supported, using the seed in `config.py`.
+`extract_features.py` performs EMD for all configured segments and may take time. `classify_groupwise_cv.py` runs 30 repeats of five-fold grouped cross-validation for nine classifiers. The remaining stages calculate grouped permutation importance and generate the manuscript figures. Outputs are deterministic where supported, using the seed in `config.py`. See [`README_PLOTS.md`](README_PLOTS.md) for figure-specific methodology and options.
 
 Both expensive stages use `N_JOBS` from `config.py` (`-1` uses all available
 CPUs). Classification writes an atomic checkpoint after every complete
@@ -120,7 +133,7 @@ and is run without development arguments:
 python classify_groupwise_cv.py
 ```
 
-Core experiment parameters—including sampling rate, channels, segmentation, IMF selection, cross-validation, aggregation, and random seed—are documented in `config.py`.
+Core experiment parameters—including sampling rate, channels, segmentation, IMF selection, cross-validation, aggregation, and random seed—are documented in `config.py`. The committed README figure is regenerated by the complete runner; all other generated outputs remain ignored by Git.
 
 ## Data
 
