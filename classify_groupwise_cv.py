@@ -21,12 +21,11 @@ from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     accuracy_score,
-    auc,
+    average_precision_score,
     balanced_accuracy_score,
     confusion_matrix,
     f1_score,
     matthews_corrcoef,
-    precision_recall_curve,
     precision_score,
     recall_score,
     roc_auc_score,
@@ -66,7 +65,7 @@ OUTPUT_DECIMALS = 4
 # Incremented because threshold selection has deliberately been returned to
 # the original training-resubstitution strategy. This prevents reuse of
 # checkpoints created under the inner-OOF threshold-selection implementation.
-CHECKPOINT_VERSION = 2
+CHECKPOINT_VERSION = 3
 
 MODEL_ORDER = [
     "QDA",
@@ -375,14 +374,21 @@ def safe_roc_auc(y_true: np.ndarray, scores: np.ndarray) -> float:
         return np.nan
 
 
-def safe_pr_auc(y_true: np.ndarray, scores: np.ndarray) -> float:
-    """Compute trapezoidal area under the precision-recall curve."""
+def safe_average_precision(
+    y_true: np.ndarray,
+    scores: np.ndarray,
+) -> float:
+    """Compute Average Precision (AP) from recording-level continuous scores."""
     try:
         if len(np.unique(y_true)) < 2:
             return np.nan
 
-        precision, recall, _ = precision_recall_curve(y_true, scores)
-        return float(auc(recall, precision))
+        return float(
+            average_precision_score(
+                y_true,
+                scores,
+            )
+        )
     except Exception:
         return np.nan
 
@@ -398,7 +404,7 @@ def calculate_metrics_from_predictions(
     When the five outer validation folds are pooled within one repeat, each fold
     can have its own threshold selected from its own outer-training partition.
     Therefore, threshold-dependent metrics are calculated from the already-fixed
-    fold-specific predictions, while ROC-AUC and PR-AUC use the pooled continuous
+    fold-specific predictions, while ROC-AUC and Average Precision (AP) use the pooled continuous
     recording scores.
     """
     y_true = np.asarray(y_true).astype(int)
@@ -420,7 +426,7 @@ def calculate_metrics_from_predictions(
         "balanced_accuracy": float(balanced_accuracy_score(y_true, pred)),
         "mcc": float(matthews_corrcoef(y_true, pred)),
         "roc_auc": safe_roc_auc(y_true, scores),
-        "pr_auc": safe_pr_auc(y_true, scores),
+        "ap": safe_average_precision(y_true, scores),
     }
 
 
@@ -1313,7 +1319,7 @@ def run_one_feature_file(
         "record_balanced_accuracy",
         "record_mcc",
         "record_roc_auc",
-        "record_pr_auc",
+        "record_ap",
     ]
 
     summary = repeat_metrics.groupby(
@@ -1402,7 +1408,7 @@ def run_one_feature_file(
         "record_balanced_accuracy_mean",
         "record_mcc_mean",
         "record_roc_auc_mean",
-        "record_pr_auc_mean",
+        "record_ap_mean",
     ]
 
     print(
