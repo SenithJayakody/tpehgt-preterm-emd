@@ -22,7 +22,7 @@ filtered EHG -> 3-minute or contraction segmentation -> EMD -> IMF1
              -> feature extraction -> grouped record-wise CV -> record prediction
 ```
 
-The baseline extracts the same features directly from each filtered EHG segment without EMD. All segments from a recording remain in the same fold, preventing record-level leakage. Predictions are aggregated at recording level using the maximum segment probability.
+The baseline extracts the same features directly from each filtered EHG segment without EMD. Cross-validation folds are stratified using one row per recording and then expanded to include all corresponding segments, preventing record-level leakage while preserving record-level class balance. Predictions are aggregated at recording level using the maximum segment probability.
 
 ## Main result
 
@@ -30,12 +30,12 @@ For fixed three-minute IMF1 features, the best Random Forest model achieved:
 
 | Metric | Score |
 |---|---:|
-| Accuracy | 0.840 |
-| F1-score | 0.789 |
-| Balanced accuracy | 0.849 |
-| Matthews correlation coefficient | 0.721 |
-| ROC-AUC | 0.848 |
-| PR-AUC | 0.922 |
+| Accuracy | 0.8474 |
+| F1-score | 0.8204 |
+| Balanced accuracy | 0.8474 |
+| Matthews correlation coefficient | 0.7274 |
+| ROC-AUC | 0.8180 |
+| Average Precision | 0.8948 |
 
 These results are based on 26 recordings and require validation on larger independent cohorts. Detailed tables, predictions, and publication figures are available under [`outputs/`](outputs/).
 

@@ -30,7 +30,7 @@ from sklearn.metrics import (
     recall_score,
     roc_auc_score,
 )
-from sklearn.model_selection import StratifiedGroupKFold
+from sklearn.model_selection import StratifiedKFold
 from sklearn.naive_bayes import GaussianNB
 from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import Pipeline
@@ -62,10 +62,10 @@ from config import (
 
 OUTPUT_DECIMALS = 4
 
-# Incremented because threshold selection has deliberately been returned to
-# the original training-resubstitution strategy. This prevents reuse of
-# checkpoints created under the inner-OOF threshold-selection implementation.
-CHECKPOINT_VERSION = 3
+# Incremented because outer folds are now stratified at recording level before
+# their segment rows are expanded. This prevents reuse of checkpoints created
+# with segment-weighted outer stratification.
+CHECKPOINT_VERSION = 4
 
 MODEL_ORDER = [
     "QDA",
@@ -568,8 +568,24 @@ def build_outer_splits(
     Dict[int, List[Tuple[np.ndarray, np.ndarray]]],
     List[Dict],
 ]:
-    """Create and audit the repeated grouped outer CV splits."""
-    expected_records = set(groups.astype(str))
+    """Create record-stratified outer folds and expand them to segment rows."""
+    if not (len(x) == len(y) == len(groups)):
+        raise ValueError("x, y, and groups must have the same number of rows.")
+
+    groups_str = groups.astype(str)
+    record_rows = pd.DataFrame({"record": groups_str, "label": y})
+    label_counts = record_rows.groupby("record")["label"].nunique()
+    inconsistent_records = label_counts[label_counts != 1].index.tolist()
+    if inconsistent_records:
+        raise ValueError(
+            "Each record must have exactly one class label; inconsistent labels "
+            f"found for: {inconsistent_records}"
+        )
+
+    record_rows = record_rows.drop_duplicates("record").reset_index(drop=True)
+    record_names = record_rows["record"].to_numpy()
+    record_labels = record_rows["label"].to_numpy()
+    expected_records = set(record_names)
     splits_by_repeat: Dict[
         int,
         List[Tuple[np.ndarray, np.ndarray]],
@@ -577,13 +593,23 @@ def build_outer_splits(
     split_rows: List[Dict] = []
 
     for repeat in range(n_repeats):
-        cv = StratifiedGroupKFold(
+        cv = StratifiedKFold(
             n_splits=N_SPLITS,
             shuffle=True,
             random_state=RANDOM_SEED + repeat,
         )
 
-        repeat_splits = list(cv.split(x, y, groups))
+        repeat_splits: List[Tuple[np.ndarray, np.ndarray]] = []
+        for train_record_idx, val_record_idx in cv.split(
+            record_names,
+            record_labels,
+        ):
+            train_record_names = record_names[train_record_idx]
+            val_record_names = record_names[val_record_idx]
+            train_idx = np.flatnonzero(np.isin(groups_str, train_record_names))
+            val_idx = np.flatnonzero(np.isin(groups_str, val_record_names))
+            repeat_splits.append((train_idx, val_idx))
+
         validation_records: List[str] = []
 
         for fold, (train_idx, val_idx) in enumerate(repeat_splits):
