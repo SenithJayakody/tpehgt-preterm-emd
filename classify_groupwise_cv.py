@@ -63,7 +63,7 @@ from config import (
 OUTPUT_DECIMALS = 4
 
 # Increment this value whenever saved checkpoints become incompatible.
-CHECKPOINT_VERSION = 4
+CHECKPOINT_VERSION = 5
 
 MODEL_ORDER = [
     "QDA",
@@ -527,16 +527,6 @@ def build_repeat_level_metrics(
             rep_df["prediction"].to_numpy(),
         )
 
-        # Store requested cross-validation metric values to four decimals.
-        metrics = {
-            key: (
-                round(float(value), OUTPUT_DECIMALS)
-                if np.isfinite(value)
-                else np.nan
-            )
-            for key, value in metrics.items()
-        }
-
         row: Dict = {
             "experiment": experiment_name,
             "model": model_name,
@@ -746,10 +736,7 @@ def evaluate_model_repeat(
             "model": model_name,
             "repeat": repeat,
             "fold": fold,
-            "threshold": round(
-                float(threshold),
-                OUTPUT_DECIMALS,
-            ),
+            "threshold": float(threshold),
             "n_train_segments": len(train_idx),
             "n_val_segments": len(val_idx),
             "n_train_records": len(train_records_df),
@@ -757,11 +744,7 @@ def evaluate_model_repeat(
         }
 
         for key, value in record_metrics.items():
-            row[f"record_{key}"] = (
-                round(float(value), OUTPUT_DECIMALS)
-                if np.isfinite(value)
-                else np.nan
-            )
+            row[f"record_{key}"] = float(value)
 
         fold_rows.append(row)
 
@@ -1345,25 +1328,19 @@ def run_one_feature_file(
         summary.reset_index()
     )
 
-    fold_results_out = round_numeric_for_output(
-        prepare_model_output(
-            fold_results,
-            ["repeat", "fold"],
-        )
+    fold_results_out = prepare_model_output(
+        fold_results,
+        ["repeat", "fold"],
     )
 
-    record_predictions_out = round_numeric_for_output(
-        prepare_model_output(
-            record_predictions,
-            ["repeat", "fold", "record"],
-        )
+    record_predictions_out = prepare_model_output(
+        record_predictions,
+        ["repeat", "fold", "record"],
     )
 
-    repeat_metrics_out = round_numeric_for_output(
-        prepare_model_output(
-            repeat_metrics,
-            ["repeat"],
-        )
+    repeat_metrics_out = prepare_model_output(
+        repeat_metrics,
+        ["repeat"],
     )
 
     summary_out = prepare_model_output(
@@ -1374,19 +1351,19 @@ def run_one_feature_file(
     fold_results_out.to_csv(
         out_dir / "fold_metrics.csv",
         index=False,
-        float_format=f"%.{OUTPUT_DECIMALS}f",
+        float_format="%.17g",
     )
 
     record_predictions_out.to_csv(
         out_dir / "record_predictions.csv",
         index=False,
-        float_format=f"%.{OUTPUT_DECIMALS}f",
+        float_format="%.17g",
     )
 
     repeat_metrics_out.to_csv(
         out_dir / "repeat_metrics.csv",
         index=False,
-        float_format=f"%.{OUTPUT_DECIMALS}f",
+        float_format="%.17g",
     )
 
     summary_out.to_csv(
@@ -1486,10 +1463,16 @@ def materialize_result_alias(
             secondary_sort_columns,
         )
 
+        float_format = (
+            f"%.{OUTPUT_DECIMALS}f"
+            if filename == "summary_metrics.csv"
+            else "%.17g"
+        )
+
         frame.to_csv(
             alias_dir / filename,
             index=False,
-            float_format=f"%.{OUTPUT_DECIMALS}f",
+            float_format=float_format,
         )
 
     for filename in [
