@@ -5,7 +5,6 @@ from pathlib import Path
 # ---------------------------------------------------------------------
 DATASET_DIR = Path("data/tpehgt/1.0.0")
 OUTPUT_DIR = Path("outputs")
-# OUTPUT_DIR = Path("outputs_raw_original")
 FEATURE_DIR = OUTPUT_DIR / "features"
 RESULT_DIR = OUTPUT_DIR / "results"
 PLOT_DIR = OUTPUT_DIR / "plots"
@@ -35,10 +34,6 @@ EHG_CHANNEL_DISPLAY_NAMES = {
     "ehg3": "EHG3",
 }
 SIGNAL_VERSION = "filtered_0p08_5hz"
-
-# EHG_CHANNELS = [0, 2, 4]
-# EHG_CHANNEL_NAMES = ["ehg1", "ehg2", "ehg3"]
-# SIGNAL_VERSION = "raw_original"
 
 # ---------------------------------------------------------------------
 # Segmentation

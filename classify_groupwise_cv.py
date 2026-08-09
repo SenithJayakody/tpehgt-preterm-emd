@@ -62,9 +62,7 @@ from config import (
 
 OUTPUT_DECIMALS = 4
 
-# Incremented because outer folds are now stratified at recording level before
-# their segment rows are expanded. This prevents reuse of checkpoints created
-# with segment-weighted outer stratification.
+# Increment this value whenever saved checkpoints become incompatible.
 CHECKPOINT_VERSION = 4
 
 MODEL_ORDER = [
@@ -124,7 +122,7 @@ METADATA_COLUMNS = {
     "start_sec",
     "end_sec",
     "imf",
-    # Compatibility with old/intermediate CSVs.
+    # Legacy metadata names accepted when reading earlier feature tables.
     "name",
     "start",
     "end",
@@ -159,9 +157,8 @@ FEATURE_FILES = {
     / "tpehgt_fixed_3min_imf4_features.csv",
 }
 
-# IMF1-selection comparisons are numerically identical to the manuscript IMF1
-# experiments. Their result directories are retained for downstream plotting,
-# but the expensive classification is performed only once.
+# IMF1 selection uses the manuscript IMF1 experiment directly, avoiding
+# duplicate classification while retaining the expected result directories.
 RESULT_ALIASES = {
     "contraction_imf1_selection": "contraction_imf1",
     "fixed_3min_imf1_selection": "fixed_3min_imf1",
@@ -194,8 +191,7 @@ def get_models() -> Dict[str, object]:
             min_samples_leaf=1,
             class_weight="balanced",
             random_state=RANDOM_SEED,
-            # Outer model/repeat jobs are parallelized with joblib.
-            # Keep estimator-internal threading at one worker.
+            # Parallelism is managed across model/repeat jobs.
             n_jobs=1,
         ),
         "Gradient Boosting": GradientBoostingClassifier(
@@ -206,10 +202,8 @@ def get_models() -> Dict[str, object]:
             hidden_layer_sizes=(256, 128),
             alpha=0.0005,
             max_iter=3000,
-            # Do not use sklearn's internal early-stopping validation split.
-            # That split is sample/segment-level and is not aware of recording
-            # groups. With early_stopping=False, stopping is based on training
-            # loss rather than a separately held-out internal validation subset.
+            # Avoid an internal segment-level validation split that is unaware
+            # of recording groups.
             early_stopping=False,
             n_iter_no_change=25,
             random_state=RANDOM_SEED,
@@ -224,7 +218,7 @@ def get_models() -> Dict[str, object]:
             depth=6,
             learning_rate=0.1,
             allow_writing_files=False,
-            # Outer model/repeat jobs are parallelized with joblib.
+            # Parallelism is managed across model/repeat jobs.
             thread_count=1,
         )
     else:
@@ -265,7 +259,6 @@ def get_feature_matrix(
 
     y = df["label"].astype(int).to_numpy()
 
-    # Record-wise grouping.
     groups = df[record_col].astype(str).to_numpy()
 
     return x, y, groups, record_col, list(x.columns)
@@ -347,7 +340,7 @@ def choose_threshold_from_training_records(
     if len(unique_scores) == 0:
         return 0.5
 
-    # Keep old-compatible behavior: threshold candidates are unique scores.
+    # Evaluate each observed finite score as a threshold candidate.
     candidates = sorted(set(float(x) for x in unique_scores))
 
     best_threshold = 0.5
@@ -677,10 +670,8 @@ def evaluate_model_repeat(
 
     Outer-validation labels are not used for fitting or threshold selection.
     """
-    # `groups` remains in the function interface because the parallel task
-    # architecture/checkpoint workflow already passes it. The actual group
-    # auditing is performed when the outer splits are built and again below
-    # using the recording metadata.
+    # Retained in the task interface for checkpoint compatibility; split
+    # construction and the metadata checks below validate record separation.
     _ = groups
 
     fold_rows: List[Dict] = []
@@ -711,17 +702,10 @@ def evaluate_model_repeat(
                 f"{sorted(overlap)}"
             )
 
-        # --------------------------------------------------------------
-        # Fit on the complete outer-training partition.
-        # --------------------------------------------------------------
         pipe = make_pipeline(clone(model))
         pipe.fit(x_train, y_train)
 
-        # --------------------------------------------------------------
-        # Original threshold-selection strategy:
-        # predict the SAME outer-training samples used to fit the model.
-        # These are fitted/resubstitution scores.
-        # --------------------------------------------------------------
+        # Obtain fitted scores from the complete outer-training partition.
         train_scores = predict_preterm_scores(
             pipe,
             x_train,
@@ -740,9 +724,7 @@ def evaluate_model_repeat(
             train_records_df["score"].to_numpy(),
         )
 
-        # --------------------------------------------------------------
-        # Evaluate on untouched outer-validation recordings.
-        # --------------------------------------------------------------
+        # Apply the selected threshold to untouched validation recordings.
         val_scores = predict_preterm_scores(
             pipe,
             x_val,

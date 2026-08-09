@@ -11,8 +11,6 @@ This project evaluates whether empirical mode decomposition (EMD) improves recor
 
 > Research software only. This repository is not a medical device and its outputs must not be used for clinical diagnosis or patient care.
 
-![Comparison of the best-performing models](outputs/plots/paper/best_model_comparison.png)
-
 ## Method overview
 
 The main paper pipeline uses the dataset-provided filtered EHG channels (0.08–5.0 Hz):
@@ -26,18 +24,18 @@ The baseline extracts the same features directly from each filtered EHG segment 
 
 ## Main result
 
-For fixed three-minute IMF1 features, the best Random Forest model achieved:
+For fixed three-minute IMF1 features, the Random Forest achieved the strongest overall performance, averaged across 30 complete out-of-fold repetitions:
 
 | Metric | Score |
 |---|---:|
-| Accuracy | 0.8474 |
-| F1-score | 0.8204 |
-| Balanced accuracy | 0.8474 |
-| Matthews correlation coefficient | 0.7274 |
-| ROC-AUC | 0.8180 |
-| Average Precision | 0.8948 |
+| Accuracy | 0.8308 |
+| F1-score | 0.7969 |
+| Balanced accuracy | 0.8308 |
+| Matthews correlation coefficient | 0.6998 |
+| ROC-AUC | 0.8157 |
+| Average Precision | 0.8877 |
 
-These results are based on 26 recordings and require validation on larger independent cohorts. Detailed tables, predictions, and publication figures are available under [`outputs/`](outputs/).
+These results are based on 26 recordings and require validation on larger independent cohorts. Running the analysis generates detailed metrics, predictions, and fold assignments under `outputs/results/`.
 
 ## Repository structure
 
@@ -46,14 +44,12 @@ These results are based on 26 recordings and require validation on larger indepe
 ├── data/tpehgt/1.0.0/       # TPEHGT v1.0.0 (third-party data)
 ├── outputs/features/        # extracted feature tables
 ├── outputs/results/         # fold-, repeat-, and record-level results
-├── outputs/plots/paper/     # publication figures and supporting tables
 ├── config.py                # experiment settings and paths
 ├── io_readers.py            # WFDB loading and metadata parsing
 ├── features.py              # EMD and feature definitions
 ├── extract_features.py      # feature-extraction pipeline
 ├── classify_groupwise_cv.py # grouped repeated cross-validation
-├── make_plots.py            # result figures
-└── make_signal_plots.py     # signal, IMF, ACF, and PSD diagnostics
+└── run_all.ps1              # complete analysis pipeline
 ```
 
 ## Installation
@@ -86,13 +82,18 @@ python -m pip install -r requirements.txt
 
 ## Reproduce the analysis
 
-Run the stages from the repository root:
+Run the complete pipeline from the repository root. The script contains portable Python commands and can be invoked with Bash on Linux or macOS:
+
+```bash
+bash -e run_all.ps1
+```
+
+Alternatively, run each stage directly:
 
 ```bash
 python io_readers.py
 python extract_features.py
 python classify_groupwise_cv.py
-python make_plots.py
 ```
 
 `extract_features.py` performs EMD for all configured segments and may take time. `classify_groupwise_cv.py` runs 30 repeats of five-fold grouped cross-validation for nine classifiers. Outputs are deterministic where supported, using the seed in `config.py`.
@@ -119,13 +120,7 @@ and is run without development arguments:
 python classify_groupwise_cv.py
 ```
 
-Signal-level diagnostic figures are optional and can generate thousands of files:
-
-```bash
-python make_signal_plots.py
-```
-
-For a small diagnostic run, first set `MAX_SIGNAL_SEGMENTS_PER_RECORD_MODE = 1` in `config.py`. Core experiment parameters—including sampling rate, channels, segmentation, IMF selection, cross-validation, aggregation, and random seed—are documented in that file.
+Core experiment parameters—including sampling rate, channels, segmentation, IMF selection, cross-validation, aggregation, and random seed—are documented in `config.py`.
 
 ## Data
 

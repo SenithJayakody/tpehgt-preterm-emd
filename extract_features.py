@@ -79,9 +79,8 @@ def build_rows_for_record(
             for feature_name, value in time_features.items():
                 source_rows["time_domain"][f"{channel_name}_{feature_name}"] = value
 
-            # One corrected EMD call supplies IMF1--IMF4 for this exact
-            # segment/channel. No settings, residual logic, or missing-IMF
-            # behavior are changed.
+            # Reuse one decomposition for every requested IMF from this
+            # segment and channel.
             imfs, _ = compute_imfs(segment, max_imfs=MAX_IMFS)
             for imf_number in imf_numbers:
                 source = f"imf{imf_number}"
