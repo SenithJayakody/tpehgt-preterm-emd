@@ -61,13 +61,19 @@ should be used for testing rather than an undocumented final selection.
   the mean of the 30 repeat-level ROC-AUC/AP values in `summary_metrics.csv`.
 - Fig. 7 uses majority vote over the 30 saved fold-specific binary OOF
   predictions for each recording. It does not apply a score threshold of 0.5.
-  Each matrix therefore contains 26 recordings. An exact 15/15 vote raises an
-  error and must be resolved explicitly.
+  The annotated-interval panel pools the dataset-provided BC/EC contraction
+  intervals and BD/ED dummy (non-contraction) intervals. Each matrix contains
+  26 recordings. An exact 15/15 vote raises an error and must be resolved
+  explicitly.
 - Grouped permutation importance imports the current RF model, recording-level
   split construction, preprocessing pipeline, MAX aggregation, and AP function
   from `classify_groupwise_cv.py`. Within each repetition it pools all five OOF
   folds before calculating baseline and permuted AP on 26 recordings.
-- Fig. 2's full-record IMF1 is clearly marked as visualization-only; classification still applies EMD after segmentation.
+- Fig. 2 plots BC/EC contraction and BD/ED dummy annotations separately. Both
+  interval types together define the annotated-interval analysis. Its
+  full-record IMF1 is visualization-only; classification still applies EMD
+  after segmentation.
+- Fig. 9 labels the pooled annotation strategy as **Annotated intervals IMF1**.
 - Fig. 8 shows descriptive recording-level feature means: channels are averaged
   within each segment, followed by segment averaging within each recording.
   This is distinct from MAX aggregation of classifier scores.

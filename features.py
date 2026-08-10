@@ -296,7 +296,7 @@ def peak_burst_features(x: np.ndarray, cfg: FeatureConfig) -> Dict[str, float]:
     detected.
 
     BURST_RATE is used instead of raw burst count so that variable-duration
-    contraction segments are not automatically assigned larger values simply
+    annotated intervals are not automatically assigned larger values simply
     because they provide more observation time.
     """
     x = np.asarray(x, dtype=float).ravel()
@@ -392,7 +392,7 @@ def peak_burst_features(x: np.ndarray, cfg: FeatureConfig) -> Dict[str, float]:
     burst_count = int(len(burst_starts))
 
     # Normalize by segment duration to remove the direct opportunity/length
-    # effect present in variable-duration contraction segments.
+    # effect present in variable-duration annotated intervals.
     out["BURST_RATE"] = float(
         burst_count / (duration_sec + 1e-12)
     )

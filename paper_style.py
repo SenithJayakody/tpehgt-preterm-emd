@@ -21,6 +21,8 @@ IMF_COLORS = {
 ACF_IMF_COLOR = "#d62728"
 
 CONTRACTION_SHADE = "#e6550d"
+DUMMY_SHADE = "#8073ac"
+BURST_SHADE = "#e6550d"
 FIXED_BOUNDARY_COLOR = "#2c7fb8"
 
 MODEL_COLORS = {
@@ -36,7 +38,7 @@ MODEL_COLORS = {
 }
 
 IMPORTANCE_COLORS = {
-    "Contraction IMF1": "#1F4E79",
+    "Annotated intervals IMF1": "#1F4E79",
     "Fixed 3-min IMF1": "#16836F",
 }
 

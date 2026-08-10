@@ -190,13 +190,18 @@ def consensus_predictions(preds: pd.DataFrame, model: str) -> pd.DataFrame:
 
 
 def plot_confusions(
-    contraction_model: str | None,
+    annotated_model: str | None,
     fixed_model: str | None,
     out_dir: Path,
 ) -> None:
     set_curve_style(FIG_DPI)
     experiments = [
-        ("contraction_imf1", "Contraction-based", "Oranges", contraction_model),
+        (
+            "annotated_interval_imf1",
+            "Annotated intervals",
+            "Oranges",
+            annotated_model,
+        ),
         ("fixed_3min_imf1", "Fixed 3-minute", "Blues", fixed_model),
     ]
 
@@ -255,7 +260,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate manuscript performance figures 6-7.")
     parser.add_argument("--experiment", default="fixed_3min_imf1")
     parser.add_argument("--models", nargs="*", default=DEFAULT_CURVE_MODELS)
-    parser.add_argument("--contraction-model", default=None, help="Default: best mean balanced-accuracy model.")
+    parser.add_argument(
+        "--annotated-model",
+        default=None,
+        help="Model for the annotated-interval panel. Default: best mean balanced-accuracy model.",
+    )
     parser.add_argument("--fixed-model", default=None, help="Default: best mean balanced-accuracy model.")
     parser.add_argument("--out-dir", type=Path, default=PLOT_DIR / "paper")
     return parser.parse_args()
@@ -265,7 +274,7 @@ def main() -> None:
     args = parse_args()
     args.out_dir.mkdir(parents=True, exist_ok=True)
     plot_roc_pr(args.experiment, args.models, args.out_dir)
-    plot_confusions(args.contraction_model, args.fixed_model, args.out_dir)
+    plot_confusions(args.annotated_model, args.fixed_model, args.out_dir)
     print(f"Saved manuscript performance figures to: {args.out_dir}")
 
 

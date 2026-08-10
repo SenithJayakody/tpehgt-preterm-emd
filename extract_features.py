@@ -11,7 +11,7 @@ from tqdm import tqdm
 from config import (
     DATASET_DIR,
     FEATURE_DIR,
-    BT_CONTRACTION_SEC,
+    BT_ANNOTATED_INTERVAL_SEC,
     BT_FIXED_SEC,
     FINAL_IMF_NUMBER,
     IMF_SELECTION_NUMBERS,
@@ -170,11 +170,11 @@ def main(n_jobs: int = N_JOBS) -> None:
     # Include the manuscript IMF even if a future selection list omits it.
     imf_numbers = list(dict.fromkeys([FINAL_IMF_NUMBER, *IMF_SELECTION_NUMBERS]))
     tables_by_mode = {
-        "contraction": build_feature_tables_for_mode(
+        "annotated_interval": build_feature_tables_for_mode(
             records=records,
-            mode="contraction",
-            intervals_by_record=contraction_by_record,
-            burst_threshold_sec=BT_CONTRACTION_SEC,
+            mode="annotated_interval",
+            intervals_by_record=annotated_by_record,
+            burst_threshold_sec=BT_ANNOTATED_INTERVAL_SEC,
             imf_numbers=imf_numbers,
             n_jobs=n_jobs,
         ),

@@ -16,11 +16,13 @@ This project evaluates whether empirical mode decomposition (EMD) improves recor
 The main paper pipeline uses the dataset-provided filtered EHG channels (0.08–5.0 Hz):
 
 ```text
-filtered EHG -> 3-minute or contraction segmentation -> EMD -> IMF1
+filtered EHG -> fixed 3-minute or annotated-interval segmentation -> EMD -> IMF1
              -> feature extraction -> grouped record-wise CV -> record prediction
 ```
 
-The baseline extracts the same features directly from each filtered EHG segment without EMD. Cross-validation folds are stratified using one row per recording and then expanded to include all corresponding segments, preventing record-level leakage while preserving record-level class balance. Predictions are aggregated at recording level using the maximum segment probability. Peak-derived features that are undefined when a segment contains too few detected peaks are mean-imputed within each training fold.
+The annotated-interval strategy pools the dataset-provided annotated contraction (BC/EC) and dummy (non-contraction; BD/ED) intervals. Across the 26 included pregnancy recordings, TPEHGT v1.0.0 provides 100 contraction intervals and 100 dummy intervals, giving 200 annotated intervals in total. The fixed-window strategy uses non-overlapping three-minute segments.
+
+The baseline extracts the same features directly from each filtered EHG segment without EMD. Cross-validation folds are stratified using one row per recording and then expanded to include all corresponding segments, preventing record-level leakage while preserving record-level class balance. Segment-level preterm-class scores are aggregated at recording level using their maximum. Peak-derived features that are undefined when a segment contains too few detected peaks are mean-imputed within each training fold.
 
 ## Main result
 

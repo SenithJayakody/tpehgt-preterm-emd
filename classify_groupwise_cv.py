@@ -62,8 +62,9 @@ from config import (
 
 OUTPUT_DECIMALS = 4
 
-# Increment this value whenever saved checkpoints become incompatible.
-CHECKPOINT_VERSION = 5
+# Version 6 prevents checkpoints from the mislabelled contraction experiment
+# from being reused under the scientifically accurate annotated-interval name.
+CHECKPOINT_VERSION = 6
 
 MODEL_ORDER = [
     "QDA",
@@ -131,21 +132,22 @@ METADATA_COLUMNS = {
 }
 
 FEATURE_FILES = {
-    "contraction_imf1": FEATURE_DIR / "tpehgt_contraction_imf1_features.csv",
+    "annotated_interval_imf1": FEATURE_DIR
+    / "tpehgt_annotated_interval_imf1_features.csv",
     "fixed_3min_imf1": FEATURE_DIR / "tpehgt_fixed_3min_imf1_features.csv",
-    "contraction_time_domain": FEATURE_DIR
-    / "tpehgt_contraction_time_domain_features.csv",
+    "annotated_interval_time_domain": FEATURE_DIR
+    / "tpehgt_annotated_interval_time_domain_features.csv",
     "fixed_3min_time_domain": FEATURE_DIR
     / "tpehgt_fixed_3min_time_domain_features.csv",
-    "contraction_imf2_selection": FEATURE_DIR
+    "annotated_interval_imf2_selection": FEATURE_DIR
     / "imf_selection"
-    / "tpehgt_contraction_imf2_features.csv",
-    "contraction_imf3_selection": FEATURE_DIR
+    / "tpehgt_annotated_interval_imf2_features.csv",
+    "annotated_interval_imf3_selection": FEATURE_DIR
     / "imf_selection"
-    / "tpehgt_contraction_imf3_features.csv",
-    "contraction_imf4_selection": FEATURE_DIR
+    / "tpehgt_annotated_interval_imf3_features.csv",
+    "annotated_interval_imf4_selection": FEATURE_DIR
     / "imf_selection"
-    / "tpehgt_contraction_imf4_features.csv",
+    / "tpehgt_annotated_interval_imf4_features.csv",
     "fixed_3min_imf2_selection": FEATURE_DIR
     / "imf_selection"
     / "tpehgt_fixed_3min_imf2_features.csv",
@@ -160,7 +162,7 @@ FEATURE_FILES = {
 # IMF1 selection uses the manuscript IMF1 experiment directly, avoiding
 # duplicate classification while retaining the expected result directories.
 RESULT_ALIASES = {
-    "contraction_imf1_selection": "contraction_imf1",
+    "annotated_interval_imf1_selection": "annotated_interval_imf1",
     "fixed_3min_imf1_selection": "fixed_3min_imf1",
 }
 

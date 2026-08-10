@@ -51,7 +51,10 @@ FEATURE_GROUP_SUFFIXES = {
 }
 
 EXPERIMENTS = [
-    ("Contraction IMF1", FEATURE_DIR / "tpehgt_contraction_imf1_features.csv"),
+    (
+        "Annotated intervals IMF1",
+        FEATURE_DIR / "tpehgt_annotated_interval_imf1_features.csv",
+    ),
     ("Fixed 3-min IMF1", FEATURE_DIR / "tpehgt_fixed_3min_imf1_features.csv"),
 ]
 
@@ -212,7 +215,7 @@ def compute_one_experiment(name: str, csv_path: Path, n_repeats: int, permutatio
 def plot_importance(summary: pd.DataFrame, out_dir: Path) -> None:
     set_importance_style(FIG_DPI)
     group_order = list(FEATURE_GROUP_SUFFIXES)
-    experiment_order = ["Contraction IMF1", "Fixed 3-min IMF1"]
+    experiment_order = ["Annotated intervals IMF1", "Fixed 3-min IMF1"]
     x = np.arange(len(group_order))
     width = 0.32
     offsets = {experiment_order[0]: -width / 2, experiment_order[1]: width / 2}

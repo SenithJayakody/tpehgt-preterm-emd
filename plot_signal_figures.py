@@ -38,10 +38,17 @@ from config import (
     PLOT_DIR,
 )
 from features import FeatureConfig, compute_imfs, detect_peaks
-from io_readers import contraction_intervals, fixed_intervals, load_pregnancy_records
+from io_readers import (
+    contraction_intervals,
+    dummy_intervals,
+    fixed_intervals,
+    load_pregnancy_records,
+)
 from paper_style import (
     ACF_IMF_COLOR,
+    BURST_SHADE,
     CONTRACTION_SHADE,
+    DUMMY_SHADE,
     FIXED_BOUNDARY_COLOR,
     IMF_COLORS,
     PRETERM_COLOR,
@@ -109,7 +116,8 @@ def plot_segmentation_comparison(rec: dict, channel: str, out_dir: Path) -> None
     signal = validate_channel(rec, channel)
     fs = float(rec["fs"])
     t = np.arange(signal.size) / fs
-    contractions = contraction_intervals(rec["record"], DATASET_DIR)
+    annotated_contractions = contraction_intervals(rec["record"], DATASET_DIR)
+    annotated_dummies = dummy_intervals(rec["record"], DATASET_DIR)
 
     # Explicitly whole-record EMD for visualization only, matching the current figure.
     imfs, _ = compute_imfs(signal, max_imfs=MAX_IMFS)
@@ -123,11 +131,34 @@ def plot_segmentation_comparison(rec: dict, channel: str, out_dir: Path) -> None
         (axes[0], signal, "Filtered EHG (mV)", "A"),
         (axes[1], imf1, "IMF1 (mV)", "B"),
     ]:
-        ax.plot(t, y, color=SIGNAL_COLOR, lw=0.75)
-        for start, end in contractions:
-            ax.axvspan(start / fs, end / fs, color=CONTRACTION_SHADE, alpha=0.18, lw=0)
+        for start, end in annotated_contractions:
+            ax.axvspan(
+                start / fs,
+                end / fs,
+                color=CONTRACTION_SHADE,
+                alpha=0.18,
+                lw=0,
+                zorder=0,
+            )
+        for start, end in annotated_dummies:
+            ax.axvspan(
+                start / fs,
+                end / fs,
+                color=DUMMY_SHADE,
+                alpha=0.16,
+                lw=0,
+                zorder=0,
+            )
+        ax.plot(t, y, color=SIGNAL_COLOR, lw=0.75, zorder=2)
         for boundary in np.arange(FIXED_WINDOW_SEC, t[-1] + 1e-9, FIXED_WINDOW_SEC):
-            ax.axvline(boundary, color=FIXED_BOUNDARY_COLOR, ls="--", lw=0.8, alpha=0.60)
+            ax.axvline(
+                boundary,
+                color=FIXED_BOUNDARY_COLOR,
+                ls="--",
+                lw=0.8,
+                alpha=0.60,
+                zorder=1,
+            )
         ax.set_ylabel(ylabel)
         panel_label(
             ax,
@@ -142,11 +173,16 @@ def plot_segmentation_comparison(rec: dict, channel: str, out_dir: Path) -> None
         handles=[
             Line2D([0], [0], color=SIGNAL_COLOR, lw=0.9, label="Signal"),
             Patch(facecolor=CONTRACTION_SHADE, alpha=0.18, label="Annotated contraction"),
+            Patch(
+                facecolor=DUMMY_SHADE,
+                alpha=0.16,
+                label="Annotated dummy (non-contraction)",
+            ),
             Line2D([0], [0], color=FIXED_BOUNDARY_COLOR, ls="--", lw=0.8, label="Fixed 3-minute boundary"),
         ],
         frameon=False,
         loc="upper right",
-        ncol=3,
+        ncol=2,
         fontsize=8,
     )
     fig.tight_layout()
@@ -154,14 +190,18 @@ def plot_segmentation_comparison(rec: dict, channel: str, out_dir: Path) -> None
     plt.close(fig)
 
     contraction_mask = np.zeros(signal.size, dtype=int)
-    for start, end in contractions:
+    for start, end in annotated_contractions:
         contraction_mask[max(0, start) : min(signal.size, end)] = 1
+    dummy_mask = np.zeros(signal.size, dtype=int)
+    for start, end in annotated_dummies:
+        dummy_mask[max(0, start) : min(signal.size, end)] = 1
     pd.DataFrame(
         {
             "time_sec": t,
             "filtered_ehg_mv": signal,
             "whole_record_imf1_visualization_only_mv": imf1,
             "inside_annotated_contraction": contraction_mask,
+            "inside_annotated_dummy": dummy_mask,
         }
     ).to_csv(out_dir / "segmentation_comparison_values.csv", index=False)
 
@@ -367,7 +407,7 @@ def plot_peak_burst_detection(rec: dict, channel: str, segment_id: int, out_dir:
     for burst_id, burst_peaks in enumerate(bursts, start=1):
         left = max(0.0, t[burst_peaks[0]] - 0.10)
         right = min(t[-1], t[burst_peaks[-1]] + 0.10)
-        ax.axvspan(left, right, color=CONTRACTION_SHADE, alpha=0.16, lw=0)
+        ax.axvspan(left, right, color=BURST_SHADE, alpha=0.16, lw=0)
 
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("IMF1 (mV)")

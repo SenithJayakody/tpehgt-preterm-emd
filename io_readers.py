@@ -94,22 +94,13 @@ def read_record(record_name: str, dataset_dir: Path = DATASET_DIR) -> Dict:
     }
 
 
-def annotated_intervals(
+def _paired_annotation_intervals(
     record_name: str,
+    start_marker: str,
+    end_marker: str,
     dataset_dir: Path = DATASET_DIR,
 ) -> List[Tuple[int, int]]:
-    """
-    Return all dataset-provided annotated intervals.
-
-    TPEHGT annotation labels:
-    BC = beginning of contraction interval
-    EC = end of contraction interval
-    BD = beginning of dummy (non-contraction) interval
-    ED = end of dummy (non-contraction) interval
-
-    Both contraction and dummy intervals are retained for the
-    annotation-guided segmentation analysis.
-    """
+    """Return intervals formed only from the requested marker pair."""
     base = str(Path(dataset_dir) / record_name)
 
     try:
@@ -123,10 +114,10 @@ def annotated_intervals(
     for sample, note in zip(ann.sample, ann.aux_note):
         note = str(note).strip()
 
-        if note in {"BC", "BD"}:
+        if note == start_marker:
             start = int(sample)
 
-        elif note in {"EC", "ED"} and start is not None:
+        elif note == end_marker and start is not None:
             end = int(sample)
 
             if end > start:
@@ -135,6 +126,59 @@ def annotated_intervals(
             start = None
 
     return intervals
+
+
+def contraction_intervals(
+    record_name: str,
+    dataset_dir: Path = DATASET_DIR,
+) -> List[Tuple[int, int]]:
+    """
+    Return dataset-provided TPEHGT contraction intervals only.
+
+    BC marks the beginning and EC marks the end of a contraction interval.
+    BC markers are paired only with EC markers.
+    """
+    return _paired_annotation_intervals(
+        record_name,
+        start_marker="BC",
+        end_marker="EC",
+        dataset_dir=dataset_dir,
+    )
+
+
+def dummy_intervals(
+    record_name: str,
+    dataset_dir: Path = DATASET_DIR,
+) -> List[Tuple[int, int]]:
+    """
+    Return dataset-provided TPEHGT dummy (non-contraction) intervals only.
+
+    BD marks the beginning and ED marks the end of a dummy interval. BD
+    markers are paired only with ED markers.
+    """
+    return _paired_annotation_intervals(
+        record_name,
+        start_marker="BD",
+        end_marker="ED",
+        dataset_dir=dataset_dir,
+    )
+
+
+def annotated_intervals(
+    record_name: str,
+    dataset_dir: Path = DATASET_DIR,
+) -> List[Tuple[int, int]]:
+    """
+    Return the sorted union of all dataset-provided annotated intervals.
+
+    The annotated-interval analysis intentionally pools dataset-provided
+    annotated contraction (BC/EC) and dummy (non-contraction; BD/ED)
+    intervals.
+    """
+    return sorted(
+        set(contraction_intervals(record_name, dataset_dir))
+        | set(dummy_intervals(record_name, dataset_dir))
+    )
 
 
 def fixed_intervals(record_name: str, dataset_dir: Path = DATASET_DIR) -> List[Tuple[int, int]]:
@@ -206,5 +250,74 @@ def save_record_report(dataset_dir: Path = DATASET_DIR, out_csv: Path | None = N
     return df
 
 
+def save_annotation_interval_report(
+    dataset_dir: Path = DATASET_DIR,
+    out_csv: Path | None = None,
+) -> pd.DataFrame:
+    """Report contraction, dummy, and combined interval counts by recording."""
+    rows = []
+
+    for record_name in list_record_names(dataset_dir):
+        if parse_label(record_name) not in (0, 1):
+            continue
+
+        contractions = contraction_intervals(record_name, dataset_dir)
+        dummies = dummy_intervals(record_name, dataset_dir)
+        annotated = annotated_intervals(record_name, dataset_dir)
+        rows.append(
+            {
+                "record": record_name,
+                "contraction_intervals": len(contractions),
+                "dummy_intervals": len(dummies),
+                "annotated_intervals": len(annotated),
+            }
+        )
+
+    count_columns = [
+        "contraction_intervals",
+        "dummy_intervals",
+        "annotated_intervals",
+    ]
+    df = pd.DataFrame(rows, columns=["record", *count_columns])
+    totals = df[
+        count_columns
+    ].sum()
+
+    print("\nAnnotation interval counts:")
+    print(f"Pregnancy recordings: {len(df)}")
+    print(f"Contraction intervals (BC/EC): {int(totals['contraction_intervals'])}")
+    print(f"Dummy intervals (BD/ED): {int(totals['dummy_intervals'])}")
+    print(f"Combined annotated intervals: {int(totals['annotated_intervals'])}")
+
+    standard_records = {
+        *(f"tpehgt_p{index:03d}" for index in range(1, 14)),
+        *(f"tpehgt_t{index:03d}" for index in range(1, 14)),
+    }
+    if set(df["record"]) == standard_records:
+        expected = {
+            "contraction_intervals": 100,
+            "dummy_intervals": 100,
+            "annotated_intervals": 200,
+        }
+        actual = {key: int(totals[key]) for key in expected}
+        if actual != expected:
+            raise RuntimeError(
+                "Unexpected annotation counts for the standard TPEHGT "
+                f"pregnancy cohort: expected={expected}, actual={actual}"
+            )
+
+    if out_csv is not None:
+        out_csv = Path(out_csv)
+        out_csv.parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(out_csv, index=False)
+        print(f"Saved annotation interval report: {out_csv}")
+
+    return df
+
+
 if __name__ == "__main__":
     save_record_report(DATASET_DIR, out_csv="outputs/record_report.csv")
+    save_annotation_interval_report(
+        DATASET_DIR,
+        out_csv="outputs/annotation_interval_report.csv",
+    )
