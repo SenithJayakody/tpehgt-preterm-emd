@@ -24,7 +24,7 @@ from features import (
     extract_time_domain_features_from_segment,
 )
 from io_readers import (
-    contraction_intervals,
+    annotated_intervals,
     fixed_intervals,
     load_pregnancy_records,
     save_record_report,
@@ -158,8 +158,8 @@ def main(n_jobs: int = N_JOBS) -> None:
     records = load_pregnancy_records(DATASET_DIR)
     print(f"\nLoaded {len(records)} term/preterm recordings")
 
-    contraction_by_record = {
-        rec["record"]: contraction_intervals(rec["record"], DATASET_DIR)
+    annotated_by_record = {
+        rec["record"]: annotated_intervals(rec["record"], DATASET_DIR)
         for rec in records
     }
     fixed_by_record = {

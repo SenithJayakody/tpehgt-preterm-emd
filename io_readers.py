@@ -94,10 +94,21 @@ def read_record(record_name: str, dataset_dir: Path = DATASET_DIR) -> Dict:
     }
 
 
-def contraction_intervals(record_name: str, dataset_dir: Path = DATASET_DIR) -> List[Tuple[int, int]]:
+def annotated_intervals(
+    record_name: str,
+    dataset_dir: Path = DATASET_DIR,
+) -> List[Tuple[int, int]]:
     """
-    Return annotated contraction intervals using BC/EC labels.
-    Some TPEHGT files also use BD/ED; these are accepted as backup.
+    Return all dataset-provided annotated intervals.
+
+    TPEHGT annotation labels:
+    BC = beginning of contraction interval
+    EC = end of contraction interval
+    BD = beginning of dummy (non-contraction) interval
+    ED = end of dummy (non-contraction) interval
+
+    Both contraction and dummy intervals are retained for the
+    annotation-guided segmentation analysis.
     """
     base = str(Path(dataset_dir) / record_name)
 
