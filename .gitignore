@@ -39,6 +39,10 @@ outputs/plots/*
 !outputs/plots/paper/
 outputs/plots/paper/*
 !outputs/plots/paper/roc_pr_curves.png
+# Compact, derived publication artifacts are committed separately. Raw data,
+# feature tables, detailed results, and checkpoints remain ignored.
+!reproducibility/
+!reproducibility/**
 !data/
 !data/tpehgt/
 !data/tpehgt/.gitkeep

@@ -7,7 +7,7 @@
 
 Official research code and reproducibility materials for **“Preterm birth prediction from electrohysterography using empirical mode decomposition and interpretable machine learning.”**
 
-This project evaluates whether empirical mode decomposition (EMD) improves record-level preterm birth prediction from electrohysterography (EHG). It uses the public Term–Preterm EHG Dataset with Tocogram (TPEHGT), leakage-safe grouped cross-validation, and interpretable handcrafted features.
+This project evaluates whether empirical mode decomposition (EMD) improves record-level preterm birth prediction from electrohysterography (EHG). It uses the public Term–Preterm EHG Dataset with Tocogram (TPEHGT), recording-level stratified cross-validation, and interpretable handcrafted features.
 
 > Research software only. This repository is not a medical device and its outputs must not be used for clinical diagnosis or patient care.
 
@@ -24,7 +24,7 @@ The **Annotated intervals** strategy comprises both dataset-provided contraction
 
 Canonical experiment names are `annotated_interval_imf1` through `annotated_interval_imf4`, `annotated_interval_time_domain`, `fixed_3min_imf1` through `fixed_3min_imf4`, and `fixed_3min_time_domain`. Generated feature files use the same names with the `tpehgt_` prefix and `_features.csv` suffix.
 
-The baseline extracts the same features directly from each filtered EHG segment without EMD. Cross-validation folds are stratified using one row per recording and then expanded to include all corresponding segments, preventing record-level leakage while preserving record-level class balance. Segment-level preterm-class scores are aggregated at recording level using their maximum. Peak-derived features that are undefined when a segment contains too few detected peaks are mean-imputed within each training fold.
+The baseline extracts the same features directly from each filtered EHG segment without EMD. Five-fold stratified cross-validation is performed at the recording level: folds are created from one row per recording and then expanded to include all corresponding segments. This keeps every segment from a recording in one fold and prevents the same recording's segments from appearing in both training and validation data. Pregnancy-wise grouping could not be performed because the public TPEHGT release does not provide a reproducible recording-to-pregnancy mapping. Segment-level preterm-class scores are aggregated at recording level using their maximum. Peak-derived features that are undefined when a segment contains too few detected peaks are mean-imputed within each training fold.
 
 ## Main result
 
@@ -62,7 +62,10 @@ The curves pool all repeated out-of-fold recording scores for visualization. The
 ├── plot_performance_figures.py # performance figures
 ├── plot_feature_distributions.py # feature-distribution figure
 ├── README_PLOTS.md          # figure methods and reproduction details
-└── run_all.ps1              # complete analysis and figure pipeline
+├── validate_final_pipeline.py # lightweight dataset/feature consistency checks
+├── export_publication_outputs.py # compact manuscript artifact exporter
+├── reproducibility/         # committed compact publication artifacts
+└── run_all.sh               # complete analysis and figure pipeline
 ```
 
 ## Installation
@@ -93,15 +96,15 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-## Reproduce the analysis
+## Reproducing the manuscript
 
-Run the complete analysis and figure pipeline from the repository root. The single runner contains portable Python commands and is invoked with Bash on Linux or macOS so that `-e` stops immediately if any stage fails:
+Obtain TPEHGT v1.0.0 from the PhysioNet dataset page listed below and place its WFDB files under `data/tpehgt/1.0.0/`. The raw dataset is intentionally excluded from version control. After creating the environment and installing `requirements.txt`, first run the inexpensive consistency check:
 
 ```bash
-bash -e run_all.ps1
+python validate_final_pipeline.py
 ```
 
-Alternatively, run each stage directly:
+It verifies 26 pregnancy recordings, 100 contraction plus 100 dummy intervals (200 Annotated intervals), and 249 complete fixed three-minute windows. Feature tables are also checked when present. Then run the individual analysis stages:
 
 ```bash
 python io_readers.py
@@ -111,6 +114,13 @@ python grouped_permutation_importance.py --n-repeats 30 --permutations-per-fold 
 python plot_signal_figures.py --record tpehgt_p001 --channel ehg2 --segment-id 0
 python plot_performance_figures.py
 python plot_feature_distributions.py
+python export_publication_outputs.py
+```
+
+Alternatively, the Bash runner performs validation, feature extraction, classification, figure/table generation, and compact publication export in order:
+
+```bash
+./run_all.sh
 ```
 
 `extract_features.py` performs EMD for all configured segments and may take time. `classify_groupwise_cv.py` runs 30 repeats of five-fold grouped cross-validation for nine classifiers. The remaining stages calculate grouped permutation importance and generate the manuscript figures. Outputs are deterministic where supported, using the seed in `config.py`. See [`README_PLOTS.md`](README_PLOTS.md) for figure-specific methodology and options.
@@ -137,7 +147,9 @@ and is run without development arguments:
 python classify_groupwise_cv.py
 ```
 
-Core experiment parameters—including sampling rate, channels, segmentation, IMF selection, cross-validation, aggregation, and random seed—are documented in `config.py`. The committed README figure is regenerated by the complete runner; all other generated outputs remain ignored by Git.
+Core experiment parameters—including sampling rate, channels, segmentation, IMF selection, cross-validation, aggregation, and random seed—are documented in `config.py`. Cross-validation is performed at recording level, with all segments from a recording retained in one fold. Pregnancy-level grouping is unavailable because the public release does not provide a reproducible recording-to-pregnancy mapping.
+
+Detailed generated outputs and checkpoints under `outputs/` remain ignored. After a complete run, `export_publication_outputs.py` creates the compact, commit-ready `reproducibility/` package containing classification summaries, IMF and filtered-signal comparisons, main-experiment OOF recording predictions, ROC/precision-recall values, consensus confusion data, recording-level feature summaries and effect sizes, and grouped permutation-importance summaries. The exporter requires real completed pipeline outputs and fails rather than creating placeholders.
 
 ## Data
 

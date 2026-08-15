@@ -6,7 +6,6 @@ import hashlib
 from importlib import metadata
 import os
 import re
-import shutil
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -158,10 +157,6 @@ FEATURE_FILES = {
     / "imf_selection"
     / "tpehgt_fixed_3min_imf4_features.csv",
 }
-
-# Final outputs use only the canonical experiment names in FEATURE_FILES.
-RESULT_ALIASES: Dict[str, str] = {}
-
 
 def get_models() -> Dict[str, object]:
     models: Dict[str, object] = {
@@ -1415,79 +1410,6 @@ def run_one_feature_file(
     )
 
 
-def materialize_result_alias(
-    alias_name: str,
-    source_name: str,
-) -> None:
-    """Create IMF1-selection outputs from the already-classified main result."""
-    source_dir = RESULT_DIR / source_name
-    alias_dir = RESULT_DIR / alias_name
-
-    if not source_dir.exists():
-        raise FileNotFoundError(
-            f"Cannot create {alias_name}; "
-            f"source results are missing: {source_dir}"
-        )
-
-    alias_dir.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
-    alias_sort_columns = {
-        "fold_metrics.csv": ["repeat", "fold"],
-        "record_predictions.csv": [
-            "repeat",
-            "fold",
-            "record",
-        ],
-        "repeat_metrics.csv": ["repeat"],
-        "summary_metrics.csv": [],
-    }
-
-    for (
-        filename,
-        secondary_sort_columns,
-    ) in alias_sort_columns.items():
-        frame = pd.read_csv(
-            source_dir / filename
-        )
-
-        if "experiment" in frame.columns:
-            frame["experiment"] = alias_name
-
-        frame = prepare_model_output(
-            frame,
-            secondary_sort_columns,
-        )
-
-        float_format = (
-            f"%.{OUTPUT_DECIMALS}f"
-            if filename == "summary_metrics.csv"
-            else "%.17g"
-        )
-
-        frame.to_csv(
-            alias_dir / filename,
-            index=False,
-            float_format=float_format,
-        )
-
-    for filename in [
-        "splits.csv",
-        "feature_columns.txt",
-    ]:
-        shutil.copyfile(
-            source_dir / filename,
-            alias_dir / filename,
-        )
-
-    print(
-        f"Reused {source_name} results as "
-        f"{alias_name} (no reclassification)."
-    )
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -1573,10 +1495,7 @@ def main(
             "n_jobs cannot be zero."
         )
 
-    available_experiments = [
-        *FEATURE_FILES,
-        *RESULT_ALIASES,
-    ]
+    available_experiments = list(FEATURE_FILES)
 
     requested = (
         available_experiments
@@ -1593,16 +1512,8 @@ def main(
             f"Unknown experiment(s): {unknown}"
         )
 
-    canonical_requested = {
-        RESULT_ALIASES.get(
-            experiment_name,
-            experiment_name,
-        )
-        for experiment_name in requested
-    }
-
     for name, csv_path in FEATURE_FILES.items():
-        if name in canonical_requested:
+        if name in requested:
             run_one_feature_file(
                 name=name,
                 csv_path=csv_path,
@@ -1610,16 +1521,6 @@ def main(
                 n_jobs=n_jobs,
                 selected_models=models,
                 resume=resume,
-            )
-
-    for (
-        alias_name,
-        source_name,
-    ) in RESULT_ALIASES.items():
-        if alias_name in requested:
-            materialize_result_alias(
-                alias_name,
-                source_name,
             )
 
 
