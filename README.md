@@ -20,7 +20,9 @@ filtered EHG -> fixed 3-minute or annotated-interval segmentation -> EMD -> IMF1
              -> feature extraction -> grouped record-wise CV -> record prediction
 ```
 
-The annotated-interval strategy pools the dataset-provided annotated contraction (BC/EC) and dummy (non-contraction; BD/ED) intervals. Across the 26 included pregnancy recordings, TPEHGT v1.0.0 provides 100 contraction intervals and 100 dummy intervals, giving 200 annotated intervals in total. The fixed-window strategy uses non-overlapping three-minute segments.
+The **Annotated intervals** strategy comprises both dataset-provided contraction (BC/EC) and dummy (non-contraction; BD/ED) intervals. Across the 26 included pregnancy recordings, TPEHGT v1.0.0 provides 100 contraction intervals and 100 dummy intervals, giving 200 annotated intervals in total. The fixed-window strategy retains only complete, consecutive, non-overlapping three-minute segments (249 windows); incomplete trailing portions are discarded.
+
+Canonical experiment names are `annotated_interval_imf1` through `annotated_interval_imf4`, `annotated_interval_time_domain`, `fixed_3min_imf1` through `fixed_3min_imf4`, and `fixed_3min_time_domain`. Generated feature files use the same names with the `tpehgt_` prefix and `_features.csv` suffix.
 
 The baseline extracts the same features directly from each filtered EHG segment without EMD. Cross-validation folds are stratified using one row per recording and then expanded to include all corresponding segments, preventing record-level leakage while preserving record-level class balance. Segment-level preterm-class scores are aggregated at recording level using their maximum. Peak-derived features that are undefined when a segment contains too few detected peaks are mean-imputed within each training fold.
 
@@ -123,7 +125,7 @@ For a short development check without changing the final defaults:
 ```bash
 python classify_groupwise_cv.py \
   --n-repeats 1 \
-  --experiments fixed_3min_imf1 \
+  --experiments annotated_interval_imf1 fixed_3min_imf1 \
   --models "Random Forest" "Logistic Regression" \
   --n-jobs 2
 ```

@@ -62,9 +62,9 @@ from config import (
 
 OUTPUT_DECIMALS = 4
 
-# Version 6 prevents checkpoints from the mislabelled contraction experiment
-# from being reused under the scientifically accurate annotated-interval name.
-CHECKPOINT_VERSION = 6
+# Version 7 identifies the fully audited annotated-interval experiment schema.
+# Older contraction-named or partially migrated checkpoints are never reused.
+CHECKPOINT_VERSION = 7
 
 MODEL_ORDER = [
     "QDA",
@@ -139,32 +139,28 @@ FEATURE_FILES = {
     / "tpehgt_annotated_interval_time_domain_features.csv",
     "fixed_3min_time_domain": FEATURE_DIR
     / "tpehgt_fixed_3min_time_domain_features.csv",
-    "annotated_interval_imf2_selection": FEATURE_DIR
+    "annotated_interval_imf2": FEATURE_DIR
     / "imf_selection"
     / "tpehgt_annotated_interval_imf2_features.csv",
-    "annotated_interval_imf3_selection": FEATURE_DIR
+    "annotated_interval_imf3": FEATURE_DIR
     / "imf_selection"
     / "tpehgt_annotated_interval_imf3_features.csv",
-    "annotated_interval_imf4_selection": FEATURE_DIR
+    "annotated_interval_imf4": FEATURE_DIR
     / "imf_selection"
     / "tpehgt_annotated_interval_imf4_features.csv",
-    "fixed_3min_imf2_selection": FEATURE_DIR
+    "fixed_3min_imf2": FEATURE_DIR
     / "imf_selection"
     / "tpehgt_fixed_3min_imf2_features.csv",
-    "fixed_3min_imf3_selection": FEATURE_DIR
+    "fixed_3min_imf3": FEATURE_DIR
     / "imf_selection"
     / "tpehgt_fixed_3min_imf3_features.csv",
-    "fixed_3min_imf4_selection": FEATURE_DIR
+    "fixed_3min_imf4": FEATURE_DIR
     / "imf_selection"
     / "tpehgt_fixed_3min_imf4_features.csv",
 }
 
-# IMF1 selection uses the manuscript IMF1 experiment directly, avoiding
-# duplicate classification while retaining the expected result directories.
-RESULT_ALIASES = {
-    "annotated_interval_imf1_selection": "annotated_interval_imf1",
-    "fixed_3min_imf1_selection": "fixed_3min_imf1",
-}
+# Final outputs use only the canonical experiment names in FEATURE_FILES.
+RESULT_ALIASES: Dict[str, str] = {}
 
 
 def get_models() -> Dict[str, object]:

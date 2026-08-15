@@ -267,6 +267,8 @@ def save_annotation_interval_report(
         rows.append(
             {
                 "record": record_name,
+                "label": parse_label(record_name),
+                "class": label_name(parse_label(record_name)),
                 "contraction_intervals": len(contractions),
                 "dummy_intervals": len(dummies),
                 "annotated_intervals": len(annotated),
@@ -278,7 +280,7 @@ def save_annotation_interval_report(
         "dummy_intervals",
         "annotated_intervals",
     ]
-    df = pd.DataFrame(rows, columns=["record", *count_columns])
+    df = pd.DataFrame(rows, columns=["record", "label", "class", *count_columns])
     totals = df[
         count_columns
     ].sum()
@@ -288,6 +290,16 @@ def save_annotation_interval_report(
     print(f"Contraction intervals (BC/EC): {int(totals['contraction_intervals'])}")
     print(f"Dummy intervals (BD/ED): {int(totals['dummy_intervals'])}")
     print(f"Combined annotated intervals: {int(totals['annotated_intervals'])}")
+    by_class = df.groupby("class")[count_columns].sum()
+    for class_name in ("preterm", "term"):
+        if class_name in by_class.index:
+            counts = by_class.loc[class_name]
+            print(
+                f"{class_name.capitalize()}: "
+                f"{int(counts['contraction_intervals'])} contraction + "
+                f"{int(counts['dummy_intervals'])} dummy = "
+                f"{int(counts['annotated_intervals'])} annotated"
+            )
 
     standard_records = {
         *(f"tpehgt_p{index:03d}" for index in range(1, 14)),
@@ -305,6 +317,20 @@ def save_annotation_interval_report(
                 "Unexpected annotation counts for the standard TPEHGT "
                 f"pregnancy cohort: expected={expected}, actual={actual}"
             )
+        expected_by_class = {
+            "preterm": (47, 47, 94),
+            "term": (53, 53, 106),
+        }
+        actual_by_class = {
+            class_name: tuple(int(by_class.loc[class_name, key]) for key in count_columns)
+            for class_name in expected_by_class
+        }
+        if actual_by_class != expected_by_class:
+            raise RuntimeError(
+                "Unexpected class-specific annotation counts for the standard "
+                f"TPEHGT pregnancy cohort: expected={expected_by_class}, "
+                f"actual={actual_by_class}"
+            )
 
     if out_csv is not None:
         out_csv = Path(out_csv)
@@ -315,9 +341,50 @@ def save_annotation_interval_report(
     return df
 
 
+def save_fixed_interval_report(
+    dataset_dir: Path = DATASET_DIR,
+    out_csv: Path | None = None,
+) -> pd.DataFrame:
+    """Report complete, non-overlapping 3-minute window counts by recording."""
+    rows = [
+        {
+            "record": record_name,
+            "label": parse_label(record_name),
+            "class": label_name(parse_label(record_name)),
+            "fixed_3min_intervals": len(fixed_intervals(record_name, dataset_dir)),
+        }
+        for record_name in list_record_names(dataset_dir)
+        if parse_label(record_name) in (0, 1)
+    ]
+    df = pd.DataFrame(rows)
+    distribution = df["fixed_3min_intervals"].value_counts().to_dict()
+    total = int(df["fixed_3min_intervals"].sum())
+    print("\nFixed 3-minute interval counts:")
+    print(f"Pregnancy recordings: {len(df)}")
+    print(f"Complete windows: {total}")
+    print(f"Recordings with 10 windows: {int(distribution.get(10, 0))}")
+    print(f"Recordings with 9 windows: {int(distribution.get(9, 0))}")
+
+    if len(df) == 26 and (total, distribution) != (249, {10: 15, 9: 11}):
+        raise RuntimeError(
+            "Unexpected fixed-window counts for the standard TPEHGT pregnancy "
+            f"cohort: total={total}, distribution={distribution}"
+        )
+    if out_csv is not None:
+        out_csv = Path(out_csv)
+        out_csv.parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(out_csv, index=False)
+        print(f"Saved fixed interval report: {out_csv}")
+    return df
+
+
 if __name__ == "__main__":
     save_record_report(DATASET_DIR, out_csv="outputs/record_report.csv")
     save_annotation_interval_report(
         DATASET_DIR,
         out_csv="outputs/annotation_interval_report.csv",
+    )
+    save_fixed_interval_report(
+        DATASET_DIR,
+        out_csv="outputs/fixed_interval_report.csv",
     )

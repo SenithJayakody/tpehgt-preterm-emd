@@ -27,6 +27,8 @@ from io_readers import (
     annotated_intervals,
     fixed_intervals,
     load_pregnancy_records,
+    save_annotation_interval_report,
+    save_fixed_interval_report,
     save_record_report,
 )
 
@@ -154,6 +156,12 @@ def main(n_jobs: int = N_JOBS) -> None:
     FEATURE_DIR.mkdir(parents=True, exist_ok=True)
 
     save_record_report(DATASET_DIR, out_csv="outputs/record_report.csv")
+    save_annotation_interval_report(
+        DATASET_DIR, out_csv="outputs/annotation_interval_report.csv"
+    )
+    save_fixed_interval_report(
+        DATASET_DIR, out_csv="outputs/fixed_interval_report.csv"
+    )
 
     records = load_pregnancy_records(DATASET_DIR)
     print(f"\nLoaded {len(records)} term/preterm recordings")
@@ -189,6 +197,19 @@ def main(n_jobs: int = N_JOBS) -> None:
     }
 
     for mode, tables in tables_by_mode.items():
+        expected_rows = 200 if mode == "annotated_interval" else 249
+        for source, table in tables.items():
+            if len(table) != expected_rows:
+                raise RuntimeError(
+                    f"Unexpected {mode} {source} row count: "
+                    f"expected {expected_rows}, got {len(table)}"
+                )
+            if set(table["record"]) != {rec["record"] for rec in records}:
+                raise RuntimeError(f"Recording cohort mismatch in {mode} {source}")
+            labels = table.groupby("record")["label"].nunique()
+            if not labels.eq(1).all():
+                raise RuntimeError(f"Inconsistent recording labels in {mode} {source}")
+
         # Main IMF1 and time-domain experiments.
         save_feature_csv(
             tables[f"imf{FINAL_IMF_NUMBER}"],
