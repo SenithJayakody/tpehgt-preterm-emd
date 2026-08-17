@@ -26,6 +26,8 @@ Canonical experiment names are `annotated_interval_imf1` through `annotated_inte
 
 The baseline extracts the same features directly from each filtered EHG segment without EMD. Five-fold stratified cross-validation is performed at the recording level: folds are created from one row per recording and then expanded to include all corresponding segments. This keeps every segment from a recording in one fold and prevents the same recording's segments from appearing in both training and validation data. Pregnancy-wise grouping could not be performed because the public TPEHGT release does not provide a reproducible recording-to-pregnancy mapping. Segment-level preterm-class scores are aggregated at recording level using their maximum. Peak-derived features that are undefined when a segment contains too few detected peaks are mean-imputed within each training fold.
 
+No oversampling is used; preterm delivery is treated as the positive class, and ROC-AUC and average precision (AP) are threshold-independent evaluation metrics.
+
 ## Main result
 
 For fixed three-minute IMF1 features, the Random Forest achieved the strongest overall performance, averaged across 30 complete out-of-fold repetitions:
@@ -51,7 +53,7 @@ The curves pool all repeated out-of-fold recording scores for visualization. The
 .
 ├── data/tpehgt/1.0.0/       # TPEHGT v1.0.0 (third-party data)
 ├── outputs/features/        # extracted feature tables
-├── outputs/results/         # fold-, repeat-, and record-level results
+├── outputs/results/         # fold-, repeat-, and recording-level results
 ├── config.py                # experiment settings and paths
 ├── io_readers.py            # WFDB loading and metadata parsing
 ├── features.py              # EMD and feature definitions

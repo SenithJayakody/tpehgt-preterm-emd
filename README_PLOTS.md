@@ -8,7 +8,7 @@ The figure scripts are located in the repository root beside `config.py`,
 - `paper_style.py` — shared colors, model names, and manuscript styles.
 - `plot_signal_figures.py` — Figs. 2–5 and their underlying CSV values.
 - `plot_performance_figures.py` — Figs. 6–7 and their underlying CSV values.
-- `plot_feature_distributions.py` — current 14-panel Fig. 8 and its record-level/effect-size CSVs.
+- `plot_feature_distributions.py` — current 14-panel Fig. 8 and its recording-level/effect-size CSVs.
 - `grouped_permutation_importance.py` — recomputes current RF grouped importance and generates Fig. 9.
 - `run_all.sh` — complete analysis plus figure-generation sequence.
 
