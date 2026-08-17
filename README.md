@@ -1,11 +1,11 @@
-# Preterm birth prediction from EHG using EMD
+# Empirical mode decomposition and interpretable machine learning for recording-level preterm birth classification from electrohysterography
 
 [![License: MIT](https://img.shields.io/badge/Code%20license-MIT-blue.svg)](LICENSE)
 [![Data: ODC-By 1.0](https://img.shields.io/badge/Data%20license-ODC--By%201.0-green.svg)](DATA_LICENSE.md)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![Dataset DOI](https://img.shields.io/badge/Dataset-10.13026%2FC2166R-blue.svg)](https://doi.org/10.13026/C2166R)
 
-Official research code and reproducibility materials for **“Preterm birth prediction from electrohysterography using empirical mode decomposition and interpretable machine learning.”**
+Official research code and reproducibility materials for **“Empirical mode decomposition and interpretable machine learning for recording-level preterm birth classification from electrohysterography.”**
 
 This project evaluates whether empirical mode decomposition (EMD) improves record-level preterm birth prediction from electrohysterography (EHG). It uses the public Term–Preterm EHG Dataset with Tocogram (TPEHGT), recording-level stratified cross-validation, and interpretable handcrafted features.
 
@@ -167,7 +167,7 @@ If you use this code, please cite the associated paper. Until its final bibliogr
 
 ```bibtex
 @article{tilakarathna_preterm_emd,
-  title   = {Preterm birth prediction from electrohysterography using empirical mode decomposition and interpretable machine learning},
+  title   = {Empirical mode decomposition and interpretable machine learning for recording-level preterm birth classification from electrohysterography},
   author  = {Tilakarathna, Umesha and Jayakody, Senith and Jayasooriya, Kalana and Godaliyadda, Roshan and Ekanayake, Parakrama and Nawinne, Isuru and Rathnayake, Chathura},
   note    = {Manuscript submitted for publication; software available at https://github.com/SenithJayakody/tpehgt-preterm-emd}
 }
