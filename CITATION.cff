@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite the associated paper and the TPEHGT dataset."
-title: "Empirical mode decomposition and interpretable machine learning for recording-level preterm birth classification from electrohysterography"
+title: "Empirical mode decomposition and interpretable machine learning for preterm birth classification from electrohysterography"
 type: software
 authors:
   - family-names: Jayakody
@@ -31,7 +31,7 @@ keywords:
   - biomedical signal processing
 preferred-citation:
   type: article
-  title: "Empirical mode decomposition and interpretable machine learning for recording-level preterm birth classification from electrohysterography"
+  title: "Empirical mode decomposition and interpretable machine learning for preterm birth classification from electrohysterography"
   authors:
     - family-names: Tilakarathna
       given-names: Umesha
