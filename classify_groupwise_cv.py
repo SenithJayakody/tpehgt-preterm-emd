@@ -1306,16 +1306,8 @@ def run_one_feature_file(
         "record_ap",
     ]
 
-    summary = repeat_metrics.groupby(
-        "model"
-    )[record_metric_cols].agg(
-        ["mean", "std"]
-    )
-
-    summary.columns = [
-        f"{first}_{second}"
-        for first, second in summary.columns
-    ]
+    summary = repeat_metrics.groupby("model")[record_metric_cols].mean()
+    summary.columns = [f"{column}_mean" for column in summary.columns]
 
     summary = round_numeric_for_output(
         summary.reset_index()

@@ -10,4 +10,5 @@ python grouped_permutation_importance.py --n-repeats 30 --permutations-per-fold 
 python plot_signal_figures.py --record tpehgt_p001 --channel ehg2 --segment-id 0
 python plot_performance_figures.py
 python plot_feature_distributions.py
+python validate_plos_figures.py
 python export_publication_outputs.py

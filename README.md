@@ -30,14 +30,14 @@ The baseline extracts the same features directly from each filtered EHG segment 
 
 For fixed three-minute IMF1 features, the Random Forest achieved the strongest overall performance, averaged across 30 complete out-of-fold repetitions:
 
-| Metric | Mean ± SD |
+| Metric | Mean |
 |---|---:|
-| Accuracy | 0.8308 ± 0.0399 |
-| F1-score | 0.7969 ± 0.0546 |
-| Balanced accuracy | 0.8308 ± 0.0399 |
-| Matthews correlation coefficient | 0.6998 ± 0.0714 |
-| ROC-AUC | 0.8157 ± 0.0285 |
-| Average Precision | 0.8877 ± 0.0333 |
+| Accuracy | 0.8308 |
+| F1-score | 0.7969 |
+| Balanced accuracy | 0.8308 |
+| Matthews correlation coefficient | 0.6998 |
+| ROC-AUC | 0.8157 |
+| Average precision (AP) | 0.8877 |
 
 These results are based on 26 recordings and require validation on larger independent cohorts. Running the analysis generates detailed metrics, predictions, and fold assignments under `outputs/results/`.
 

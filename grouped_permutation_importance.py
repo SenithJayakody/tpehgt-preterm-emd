@@ -275,7 +275,6 @@ def main() -> None:
 
     summary = all_values.groupby(["experiment", "model", "feature_group"], as_index=False).agg(
         mean_decrease_ap=("decrease_ap", "mean"),
-        sd_decrease_ap=("decrease_ap", "std"),
         n_repetitions=("repeat", "nunique"),
         n_permutations=("permutation", "nunique"),
         n_values=("decrease_ap", "size"),

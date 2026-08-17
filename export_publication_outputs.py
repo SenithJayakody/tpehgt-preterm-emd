@@ -35,6 +35,7 @@ def main() -> None:
     summaries = []
     for experiment in CANONICAL_EXPERIMENTS:
         frame = pd.read_csv(require_file(RESULT_DIR / experiment / "summary_metrics.csv"))
+        frame = frame[["model", *[column for column in frame.columns if column.endswith("_mean")]]]
         frame.insert(0, "experiment", experiment)
         summaries.append(frame)
     combined = pd.concat(summaries, ignore_index=True)
