@@ -163,13 +163,13 @@ def plot_segmentation_comparison(rec: dict, channel: str, out_dir: Path) -> None
         panel_label(
             ax,
             letter,
-            x=-0.10,
-            y=1.16 if letter == "A" else 1.06,
+            x=0.01,
+            y=0.96,
             fontsize=14,
         )
 
     axes[1].set_xlabel("Time (s)")
-    axes[0].legend(
+    fig.legend(
         handles=[
             Line2D([0], [0], color=SIGNAL_COLOR, lw=0.9, label="Signal"),
             Patch(facecolor=CONTRACTION_SHADE, alpha=0.18, label="Annotated contraction"),
@@ -181,11 +181,12 @@ def plot_segmentation_comparison(rec: dict, channel: str, out_dir: Path) -> None
             Line2D([0], [0], color=FIXED_BOUNDARY_COLOR, ls="--", lw=0.8, label="Fixed 3-minute boundary"),
         ],
         frameon=False,
-        loc="upper right",
-        ncol=2,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 1.0),
+        ncol=4,
         fontsize=8,
     )
-    fig.tight_layout()
+    fig.tight_layout(rect=(0, 0, 1, 0.88))
     save_png_pdf(fig, out_dir / "segmentation_comparison", FIG_DPI)
     plt.close(fig)
 
@@ -393,7 +394,7 @@ def plot_peak_burst_detection(rec: dict, channel: str, segment_id: int, out_dir:
     bursts = burst_groups_from_peaks(peaks, fs, BT_FIXED_SEC)
     t = np.arange(imf1.size) / fs
 
-    fig, ax = plt.subplots(figsize=(7.5, 3.5))
+    fig, ax = plt.subplots(figsize=(10.0, 3.5))
     ax.plot(t, imf1, color=IMF_COLORS[1], lw=0.9, label="IMF1")
     if cfg.peak_mode == "abs":
         ax.axhline(threshold, color=PRETERM_COLOR, ls="--", lw=0.9, label="Peak threshold")
@@ -402,7 +403,16 @@ def plot_peak_burst_detection(rec: dict, channel: str, segment_id: int, out_dir:
         ax.axhline(threshold, color=PRETERM_COLOR, ls="--", lw=0.9, label="Peak threshold")
 
     if peaks.size:
-        ax.scatter(t[peaks], imf1[peaks], s=20, color="black", zorder=4, label="Detected peak")
+        ax.scatter(
+            t[peaks],
+            imf1[peaks],
+            s=18,
+            marker="x",
+            linewidths=0.8,
+            color="black",
+            zorder=4,
+            label="Detected peak",
+        )
 
     for burst_id, burst_peaks in enumerate(bursts, start=1):
         left = max(0.0, t[burst_peaks[0]] - 0.10)
@@ -411,8 +421,18 @@ def plot_peak_burst_detection(rec: dict, channel: str, segment_id: int, out_dir:
 
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("IMF1 (mV)")
-    ax.legend(frameon=False, loc="upper right")
-    fig.tight_layout()
+    handles, labels = ax.get_legend_handles_labels()
+    handles.append(Patch(facecolor=BURST_SHADE, alpha=0.16, label="Burst interval"))
+    labels.append("Burst interval")
+    fig.legend(
+        handles,
+        labels,
+        frameon=False,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 1.0),
+        ncol=4,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.86))
     save_png_pdf(fig, out_dir / "peak_burst_detection", FIG_DPI)
     plt.close(fig)
 
