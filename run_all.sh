@@ -7,7 +7,7 @@ python extract_features.py
 python validate_final_pipeline.py
 python classify_groupwise_cv.py
 python grouped_permutation_importance.py --n-repeats 30 --permutations-per-fold 1
-python plot_signal_figures.py --record tpehgt_p001 --channel ehg2 --segment-id 0
+python plot_signal_figures.py --record tpehgt_p001 --channel ehg2 --segment-id 0 --fig2-record tpehgt_p003 --fig2-channel ehg2 --fig3-record tpehgt_p002 --fig3-channel ehg2 --fig3-segment-id 4
 python plot_performance_figures.py
 python plot_feature_distributions.py
 python validate_plos_figures.py

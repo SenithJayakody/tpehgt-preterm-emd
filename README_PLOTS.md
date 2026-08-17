@@ -29,7 +29,7 @@ python io_readers.py
 python extract_features.py
 python classify_groupwise_cv.py
 python grouped_permutation_importance.py --n-repeats 30 --permutations-per-fold 1
-python plot_signal_figures.py --record tpehgt_p001 --channel ehg2 --segment-id 0
+python plot_signal_figures.py --record tpehgt_p001 --channel ehg2 --segment-id 0 --fig2-record tpehgt_p003 --fig2-channel ehg2 --fig3-record tpehgt_p002 --fig3-channel ehg2 --fig3-segment-id 4
 python plot_performance_figures.py
 python plot_feature_distributions.py
 python validate_plos_figures.py
@@ -42,13 +42,18 @@ final signal figures:
 python plot_signal_figures.py \
   --record tpehgt_p001 \
   --channel ehg2 \
-  --segment-id 0
+  --segment-id 0 \
+  --fig2-record tpehgt_p003 \
+  --fig2-channel ehg2 \
+  --fig3-record tpehgt_p002 \
+  --fig3-channel ehg2 \
+  --fig3-segment-id 4
 ```
 
-Replace these example values with the representative signal selected for the
-manuscript. If the arguments are omitted, the script deterministically selects
-the first preterm recording, uses EHG2, and uses fixed segment 0; that fallback
-should be used for testing rather than an undocumented final selection.
+The final Fig. 2 uses filtered EHG2 from `tpehgt_p003`. Figs. 3–5 retain
+filtered EHG2. Fig. 3 specifically uses fixed segment 4 from `tpehgt_p002`;
+Fig. 5 retains fixed segment 0 from `tpehgt_p001`. The figure-specific
+arguments prevent one representative selection from changing the others.
 
 ## Important methodological updates reflected here
 

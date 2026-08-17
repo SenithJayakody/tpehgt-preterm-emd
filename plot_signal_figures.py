@@ -458,6 +458,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate manuscript signal figures 2-5.")
     parser.add_argument("--record", default=None, help="Representative record. Default: first preterm record.")
     parser.add_argument("--channel", default="ehg2", choices=EHG_CHANNEL_NAMES)
+    parser.add_argument("--fig2-record", default=None, help="Optional record used only for Fig. 2.")
+    parser.add_argument("--fig2-channel", default=None, choices=EHG_CHANNEL_NAMES, help="Optional channel used only for Fig. 2.")
+    parser.add_argument("--fig3-record", default=None, help="Optional record used only for Fig. 3.")
+    parser.add_argument("--fig3-channel", default=None, choices=EHG_CHANNEL_NAMES, help="Optional channel used only for Fig. 3.")
+    parser.add_argument("--fig3-segment-id", type=int, default=None, help="Optional fixed segment used only for Fig. 3.")
     parser.add_argument("--segment-id", type=int, default=0, help="Fixed 3-min segment used for Figs. 3 and 5.")
     parser.add_argument("--out-dir", type=Path, default=PLOT_DIR / "paper")
     return parser.parse_args()
@@ -470,10 +475,17 @@ def main() -> None:
     if not records:
         raise RuntimeError("No term/preterm records found. Check DATASET_DIR.")
     rec = find_record(records, args.record)
+    fig2_rec = find_record(records, args.fig2_record) if args.fig2_record else rec
+    fig2_channel = args.fig2_channel or args.channel
+    fig3_rec = find_record(records, args.fig3_record) if args.fig3_record else rec
+    fig3_channel = args.fig3_channel or args.channel
+    fig3_segment_id = args.fig3_segment_id if args.fig3_segment_id is not None else args.segment_id
     print(f"Representative signal figures: record={rec['record']}, channel={args.channel}, fixed segment={args.segment_id}")
+    print(f"Fig. 2 segmentation signal: record={fig2_rec['record']}, channel={fig2_channel}")
+    print(f"Fig. 3 decomposition signal: record={fig3_rec['record']}, channel={fig3_channel}, fixed segment={fig3_segment_id}")
 
-    plot_segmentation_comparison(rec, args.channel, args.out_dir)
-    plot_imf_acf_psd(rec, args.channel, args.segment_id, args.out_dir)
+    plot_segmentation_comparison(fig2_rec, fig2_channel, args.out_dir)
+    plot_imf_acf_psd(fig3_rec, fig3_channel, fig3_segment_id, args.out_dir)
     plot_class_mean_psd(records, args.out_dir)
     plot_peak_burst_detection(rec, args.channel, args.segment_id, args.out_dir)
     print(f"Saved manuscript signal figures to: {args.out_dir}")
