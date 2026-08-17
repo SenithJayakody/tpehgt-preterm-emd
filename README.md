@@ -5,9 +5,9 @@
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![Dataset DOI](https://img.shields.io/badge/Dataset-10.13026%2FC2166R-blue.svg)](https://doi.org/10.13026/C2166R)
 
-Official research code and reproducibility materials for **“Empirical mode decomposition and interpretable machine learning for preterm birth classification from electrohysterography.”**
+Official analysis code and reproducibility instructions for **“Empirical mode decomposition and interpretable machine learning for preterm birth classification from electrohysterography.”**
 
-This project evaluates whether empirical mode decomposition (EMD) improves record-level preterm birth prediction from electrohysterography (EHG). It uses the public Term–Preterm EHG Dataset with Tocogram (TPEHGT), recording-level stratified cross-validation, and interpretable handcrafted features.
+This project evaluates whether empirical mode decomposition (EMD) improves recording-level term-versus-preterm classification from electrohysterography (EHG). It uses the public Term–Preterm EHG Dataset with Tocogram (TPEHGT), recording-level stratified cross-validation, and interpretable handcrafted features.
 
 > Research software only. This repository is not a medical device and its outputs must not be used for clinical diagnosis or patient care.
 
